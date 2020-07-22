@@ -153,8 +153,17 @@ def test_boundary_data_2_by_2_array_2_halo():
             3,
             fv3util.WEST,
             slice(None, None),
+            slice(1, 4),
+            id="none_is_changed",
+        ),
+        pytest.param(
+            fv3util.Y_DIM,
+            1,
+            3,
+            fv3util.WEST,
             slice(None, None),
-            id="none_not_changed",
+            slice(1, 4),
+            id="perpendicular_none_is_changed",
         ),
         pytest.param(
             fv3util.X_DIM,

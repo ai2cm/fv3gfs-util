@@ -119,10 +119,6 @@ class BoundedArrayView:
         self._dims = dims
         self._origin = origin
         self._extent = extent
-        self._west = BoundaryArrayView(array, constants.WEST, dims, origin, extent)
-        self._east = BoundaryArrayView(array, constants.EAST, dims, origin, extent)
-        self._south = BoundaryArrayView(array, constants.SOUTH, dims, origin, extent)
-        self._north = BoundaryArrayView(array, constants.NORTH, dims, origin, extent)
         self._northwest = BoundaryArrayView(
             array, constants.NORTHWEST, dims, origin, extent
         )
@@ -184,22 +180,6 @@ class BoundedArrayView:
             else:
                 shifted_index.append(entry + origin)
         return tuple(shifted_index)
-
-    @property
-    def west(self) -> BoundaryArrayView:
-        return self._west
-
-    @property
-    def east(self) -> BoundaryArrayView:
-        return self._east
-
-    @property
-    def south(self) -> BoundaryArrayView:
-        return self._south
-
-    @property
-    def north(self) -> BoundaryArrayView:
-        return self._north
 
     @property
     def northwest(self) -> BoundaryArrayView:
