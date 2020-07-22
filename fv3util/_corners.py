@@ -81,7 +81,7 @@ def fill_scalar_corners(
     direction: Union["x", "y"],
     tile_partitioner: TilePartitioner,
     rank: int,
-    n_halo: int
+    n_halo: int,
 ):
     if quantity.dims[0] not in constants.X_DIMS:
         raise ValueError("first dimension must be in x-direction")
@@ -96,28 +96,44 @@ def fill_scalar_corners(
     if on_south and on_west:
         if direction == "y":
             shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
-            quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(quantity.view.southwest[shift:n_halo + shift, -n_halo:0], k=-1)
+            quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(
+                quantity.view.southwest[shift : n_halo + shift, -n_halo:0], k=-1
+            )
         else:
             shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
-            quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(quantity.view.southwest[-n_halo:0, shift:n_halo + shift], k=1)
+            quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(
+                quantity.view.southwest[-n_halo:0, shift : n_halo + shift], k=1
+            )
     if on_north and on_west:
         if direction == "y":
             shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
-            quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(quantity.view.northwest[shift:n_halo + shift, 0:n_halo], k=1)
+            quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(
+                quantity.view.northwest[shift : n_halo + shift, 0:n_halo], k=1
+            )
         else:
             shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
-            quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(quantity.view.northwest[-n_halo:0, -n_halo - shift:-shift], k=-1)
+            quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(
+                quantity.view.northwest[-n_halo:0, -n_halo - shift : -shift], k=-1
+            )
     if on_south and on_east:
         if direction == "y":
             shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
-            quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(quantity.view.southeast[-n_halo - shift:-shift, -n_halo:0], k=1)
+            quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(
+                quantity.view.southeast[-n_halo - shift : -shift, -n_halo:0], k=1
+            )
         else:
             shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
-            quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(quantity.view.southeast[0:n_halo, shift:n_halo + shift], k=-1)
+            quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(
+                quantity.view.southeast[0:n_halo, shift : n_halo + shift], k=-1
+            )
     if on_north and on_east:
         if direction == "y":
             shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
-            quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(quantity.view.northeast[-n_halo - shift:-shift, 0:n_halo], k=-1)
+            quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(
+                quantity.view.northeast[-n_halo - shift : -shift, 0:n_halo], k=-1
+            )
         else:
             shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
-            quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(quantity.view.northeast[0:n_halo, -n_halo - shift:-shift], k=1)
+            quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(
+                quantity.view.northeast[0:n_halo, -n_halo - shift : -shift], k=1
+            )
