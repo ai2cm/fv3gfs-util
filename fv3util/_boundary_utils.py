@@ -92,10 +92,10 @@ def boundary_at_start_of_dim(boundary: int, dim: str) -> bool:
 
 
 BOUNDARY_AT_START_OF_DIM_MAPPING = {
-    constants.WEST: {constants.X_DIM: True, constants.X_INTERFACE_DIM: True,},
-    constants.EAST: {constants.X_DIM: False, constants.X_INTERFACE_DIM: False,},
-    constants.SOUTH: {constants.Y_DIM: True, constants.Y_INTERFACE_DIM: True,},
-    constants.NORTH: {constants.Y_DIM: False, constants.Y_INTERFACE_DIM: False,},
+    constants.WEST: {constants.X_DIM: True, constants.X_INTERFACE_DIM: True},
+    constants.EAST: {constants.X_DIM: False, constants.X_INTERFACE_DIM: False},
+    constants.SOUTH: {constants.Y_DIM: True, constants.Y_INTERFACE_DIM: True},
+    constants.NORTH: {constants.Y_DIM: False, constants.Y_INTERFACE_DIM: False},
 }
 BOUNDARY_AT_START_OF_DIM_MAPPING[constants.NORTHWEST] = {
     **BOUNDARY_AT_START_OF_DIM_MAPPING[constants.NORTH],

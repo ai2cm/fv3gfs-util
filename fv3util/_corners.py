@@ -83,6 +83,24 @@ def fill_scalar_corners(
     rank: int,
     n_halo: int,
 ):
+    """
+    At the corners of tile faces, copy data from halo edges into halo corners to allow
+    stencils to be translated along those edges in a computationally-relevant way.
+
+    The quantity is modified in-place.
+
+    Args:
+        quantity: the quantity to modify, whose first two dimensions must be along
+            the x and y directions, respectively
+        direction: the direction along which we want to enable stencils to compute.
+            For example, calling with "x" would allow a stencil with length > 1 along
+            the x-direction to be convolved with Quantity. Note it is not possible
+            to use corner filling to convolve with stencils having length > 1 along
+            both x and y dimensions.
+        tile_partitioner: object to determine tile positions of ranks
+        rank: rank on which the quantity exists
+        n_halo: number of halo points to fill
+    """
     if quantity.dims[0] not in constants.X_DIMS:
         raise ValueError("first dimension must be in x-direction")
     elif quantity.dims[1] not in constants.Y_DIMS:
@@ -95,6 +113,9 @@ def fill_scalar_corners(
     on_west = tile_partitioner.on_tile_right(rank)
     if on_south and on_west:
         if direction == "y":
+            # for interface variables, the edge exists on both sides of the corner, so
+            # we need to copy data *after* that edge. shift=1 does this, shift=0
+            # does nothing
             shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
             quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(
                 quantity.view.southwest[shift : n_halo + shift, -n_halo:0], k=-1
