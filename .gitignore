@@ -4,7 +4,6 @@
 # Fortran compilation files
 *.o
 *.mod
-fv3.exe
 
 # Cython c-output
 *.c
@@ -110,4 +109,3 @@ ENV/
 # mypy
 .mypy_cache/
 .vscode
-
