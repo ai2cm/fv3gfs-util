@@ -296,9 +296,7 @@ def test_values_preserved(cube_partitioner, numpy):
     # initialize store
     monitor = fv3util.ZarrMonitor(store, cube_partitioner)
     quantity = fv3util.Quantity(
-        numpy.random.uniform(size=(10, 10)),
-        dims=dims,
-        units=units
+        numpy.random.uniform(size=(10, 10)), dims=dims, units=units
     )
     monitor.store({"var": quantity})
 
