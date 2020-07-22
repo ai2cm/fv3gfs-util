@@ -1,5 +1,6 @@
 import pytest
 import fv3util
+from fv3util._boundary_utils import get_boundary_slice
 import copy
 
 
@@ -43,13 +44,9 @@ def n_points(request):
     return request.param
 
 
-@pytest.fixture(params=["fewer", "more", "same"])
+@pytest.fixture(params=["fewer", "same"])
 def n_points_update(request, n_points):
-    update = n_points + {"fewer": -1, "more": 1, "same": 0}[request.param]
-    if update > n_points:
-        pytest.skip("cannot update more points than exist in the halo")
-    else:
-        return update
+    return n_points + {"fewer": -1, "same": 0}[request.param]
 
 
 @pytest.fixture(
@@ -338,7 +335,7 @@ def test_zeros_halo_update(
         for rank, quantity in enumerate(zeros_quantity_list):
             boundaries = boundary_dict[rank % ranks_per_tile]
             for boundary in boundaries:
-                boundary_slice = fv3util.boundary._get_boundary_slice(
+                boundary_slice = get_boundary_slice(
                     quantity.dims,
                     quantity.origin,
                     quantity.extent,
@@ -385,7 +382,7 @@ def test_zeros_vector_halo_update(
         for rank, (y_quantity, x_quantity) in enumerate(zip(y_list, x_list)):
             boundaries = boundary_dict[rank % ranks_per_tile]
             for boundary in boundaries:
-                boundary_slice = fv3util.boundary._get_boundary_slice(
+                boundary_slice = get_boundary_slice(
                     x_quantity.dims,
                     x_quantity.origin,
                     x_quantity.extent,

@@ -13,7 +13,7 @@ def ny_tile(request):
     return request.param
 
 
-@pytest.fixture(params=[60, 80])
+@pytest.fixture(params=[80])
 def nz(request):
     return request.param
 
