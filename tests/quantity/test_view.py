@@ -168,70 +168,70 @@ def quantity(request):
 #         quantity.np.testing.assert_array_equal(transposed_result, reference)
 
 
-# @pytest.mark.parametrize(
-#     "quantity",
-#     [
-#         fv3util.Quantity(
-#             np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
-#             dims=[fv3util.X_DIM, fv3util.Y_DIM],
-#             units="m",
-#             origin=(1, 1),
-#             extent=(1, 1),
-#         )
-#     ],
-# )
-# @pytest.mark.parametrize(
-#     "view_name",
-#     [
-#         "east",
-#         "west",
-#         "north",
-#         "south",
-#         "northeast",
-#         "northwest",
-#         "southeast",
-#         "southwest",
-#         "interior",
-#     ],
-# )
-# def test_many_indices_raises(quantity, view_name):
-#     view = getattr(quantity.view, view_name)
-#     index = tuple([0] * (len(quantity.dims) + 1))
-#     with pytest.raises(IndexError):
-#         view[index]
+@pytest.mark.parametrize(
+    "quantity",
+    [
+        fv3util.Quantity(
+            np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
+            dims=[fv3util.X_DIM, fv3util.Y_DIM],
+            units="m",
+            origin=(1, 1),
+            extent=(1, 1),
+        )
+    ],
+)
+@pytest.mark.parametrize(
+    "view_name",
+    [
+        # "east",
+        # "west",
+        # "north",
+        # "south",
+        "northeast",
+        "northwest",
+        "southeast",
+        "southwest",
+        "interior",
+    ],
+)
+def test_many_indices_raises(quantity, view_name):
+    view = getattr(quantity.view, view_name)
+    index = tuple([0] * (len(quantity.dims) + 1))
+    with pytest.raises(IndexError):
+        view[index]
 
 
-# @pytest.mark.parametrize(
-#     "quantity",
-#     [
-#         fv3util.Quantity(
-#             np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
-#             dims=[fv3util.X_DIM, fv3util.Y_DIM],
-#             units="m",
-#             origin=(1, 1),
-#             extent=(1, 1),
-#         )
-#     ],
-# )
-# @pytest.mark.parametrize(
-#     "view_name",
-#     [
-#         "east",
-#         "west",
-#         "north",
-#         "south",
-#         "northeast",
-#         "northwest",
-#         "southeast",
-#         "southwest",
-#         "interior",
-#     ],
-# )
-# def test_many_slices_raises(quantity, view_name):
-#     view = getattr(quantity.view, view_name)
-#     index = tuple([slice(0, 1)] * (len(quantity.dims) + 1))
-#     with pytest.raises(IndexError):
-#         view[index]
+@pytest.mark.parametrize(
+    "quantity",
+    [
+        fv3util.Quantity(
+            np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
+            dims=[fv3util.X_DIM, fv3util.Y_DIM],
+            units="m",
+            origin=(1, 1),
+            extent=(1, 1),
+        )
+    ],
+)
+@pytest.mark.parametrize(
+    "view_name",
+    [
+        # "east",
+        # "west",
+        # "north",
+        # "south",
+        "northeast",
+        "northwest",
+        "southeast",
+        "southwest",
+        "interior",
+    ],
+)
+def test_many_slices_raises(quantity, view_name):
+    view = getattr(quantity.view, view_name)
+    index = tuple([slice(0, 1)] * (len(quantity.dims) + 1))
+    with pytest.raises(IndexError):
+        view[index]
 
 
 # @pytest.mark.parametrize(
@@ -773,18 +773,6 @@ def quantity(request):
                 origin=(1, 1),
                 extent=(1, 1),
             ),
-            (0, 0),
-            4,
-            id="3_by_3_inside_corner",
-        ),
-        pytest.param(
-            fv3util.Quantity(
-                np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
-                dims=[fv3util.X_DIM, fv3util.Y_DIM],
-                units="m",
-                origin=(1, 1),
-                extent=(1, 1),
-            ),
             (-1, 0),
             1,
             id="3_by_3_beside_corner",
@@ -868,18 +856,6 @@ def test_southwest(quantity, view_slice, reference):
             (slice(0, 1), slice(-1, 0)),
             np.array([[6]]),
             id="3_by_3_corner_as_slice",
-        ),
-        pytest.param(
-            fv3util.Quantity(
-                np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
-                dims=[fv3util.X_DIM, fv3util.Y_DIM],
-                units="m",
-                origin=(1, 1),
-                extent=(1, 1),
-            ),
-            (-1, 0),
-            4,
-            id="3_by_3_inside_corner",
         ),
         pytest.param(
             fv3util.Quantity(
