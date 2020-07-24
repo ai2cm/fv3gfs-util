@@ -314,7 +314,7 @@ def zeros_quantity_list(total_ranks, dims, units, origin, extent, shape, numpy, 
 
 
 @pytest.mark.parametrize(
-    "n_points, n_points_update, n_buffer", [(2, "more", 0),], indirect=True
+    "n_points, n_points_update, n_buffer", [(2, "more", 0)], indirect=True
 )
 def test_too_many_points_requested(
     zeros_quantity_list,
