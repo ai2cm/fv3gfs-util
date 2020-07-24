@@ -106,7 +106,7 @@ class BoundedArrayView:
 
     For corner attributes e.g. `northwest`, modified indexing is done for the two
     axes according to the edges which make up the corner. In other words, indexing
-    is offset relative to the intersection of th two edges which make the corner.
+    is offset relative to the intersection of the two edges which make the corner.
 
     For `interior`, start indices of the horizontal dimensions are relative to the
     origin, and end indices are relative to the origin + extent. For example,
