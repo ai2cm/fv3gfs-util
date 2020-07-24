@@ -68,6 +68,7 @@ class SimpleBoundary(Boundary):
             quantity.dims,
             quantity.origin,
             quantity.extent,
+            quantity.data.shape,
             self.boundary_type,
             n_points,
             interior,

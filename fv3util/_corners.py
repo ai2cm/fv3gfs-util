@@ -1,8 +1,3 @@
-from .quantity import Quantity
-from .partitioner import TilePartitioner
-from typing import Union
-from . import constants
-
 """
 fill_scalar_corners
 
@@ -13,6 +8,9 @@ The corners themselves do not map on to anything meaningful. At, say, the southw
 corner of a tile, the south edge and west edge correspond to different cube faces.
 However, there is no cube face across the southwest corner - it's the edge between
 the two adjacent tiles.
+
+(Figures as below depict grid cells near the edge of a tile domain. All symbols except
+for C represent halo data.)
 
 W: west neighbor tile
 S: south neighbor tile
@@ -74,6 +72,10 @@ shown earlier.
 147SSS
 
 """
+from .quantity import Quantity
+from .partitioner import TilePartitioner
+from typing import Union, Tuple
+from . import constants
 
 
 def fill_scalar_corners(
@@ -109,52 +111,65 @@ def fill_scalar_corners(
         raise TypeError(f"direction must be one of 'x' or 'y', received {direction}")
     on_north = tile_partitioner.on_tile_top(rank)
     on_south = tile_partitioner.on_tile_bottom(rank)
-    on_east = tile_partitioner.on_tile_left(rank)
-    on_west = tile_partitioner.on_tile_right(rank)
+    on_east = tile_partitioner.on_tile_right(rank)
+    on_west = tile_partitioner.on_tile_left(rank)
+    # for interface variables, the edge exists on both sides of the corner, so
+    # we need to copy data *after* that edge. shift=1 does this, shift=0
+    # does nothing
+    shift = _shared_edge_points(direction, quantity.dims)
     if on_south and on_west:
         if direction == "y":
-            # for interface variables, the edge exists on both sides of the corner, so
-            # we need to copy data *after* that edge. shift=1 does this, shift=0
-            # does nothing
-            shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
             quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(
                 quantity.view.southwest[shift : n_halo + shift, -n_halo:0], k=-1
             )
         else:
-            shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
             quantity.view.southwest[-n_halo:0, -n_halo:0] = quantity.np.rot90(
                 quantity.view.southwest[-n_halo:0, shift : n_halo + shift], k=1
             )
     if on_north and on_west:
         if direction == "y":
-            shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
             quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(
                 quantity.view.northwest[shift : n_halo + shift, 0:n_halo], k=1
             )
         else:
-            shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
             quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.rot90(
                 quantity.view.northwest[-n_halo:0, -n_halo - shift : -shift], k=-1
             )
     if on_south and on_east:
         if direction == "y":
-            shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
             quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(
                 quantity.view.southeast[-n_halo - shift : -shift, -n_halo:0], k=1
             )
         else:
-            shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
             quantity.view.southeast[0:n_halo, -n_halo:0] = quantity.np.rot90(
                 quantity.view.southeast[0:n_halo, shift : n_halo + shift], k=-1
             )
     if on_north and on_east:
         if direction == "y":
-            shift = int(quantity.dims[0] in constants.INTERFACE_DIMS)
             quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(
                 quantity.view.northeast[-n_halo - shift : -shift, 0:n_halo], k=-1
             )
         else:
-            shift = int(quantity.dims[1] in constants.INTERFACE_DIMS)
             quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.rot90(
                 quantity.view.northeast[0:n_halo, -n_halo - shift : -shift], k=1
             )
+
+
+def _shared_edge_points(fill_direction: Union["x", "y"], dims: Tuple[str]):
+    """
+    Returns the number of edge points shared by adjacent tiles along the direction
+    that is going to be copied when a given fill_direction is passed to a corner
+    filling routine.
+
+    Note that the direction along which data is copied is the opposite of the
+    fill_direction, as the fill direction corresponds to the direction along which
+    stencils are going to be subsequently called.
+    """
+    if fill_direction == "y":
+        # for interface variables, the edge exists on both sides of the corner, so
+        # we need to copy data *after* that edge. shift=1 does this, shift=0
+        # does nothing
+        shift = int(dims[0] in constants.INTERFACE_DIMS)
+    else:
+        shift = int(dims[1] in constants.INTERFACE_DIMS)
+    return shift

@@ -72,7 +72,6 @@ def test_fill_scalar_corners_copies_from_halo(
     quantity.view.northwest[-n_halo:0, 0:n_halo] = quantity.np.nan
     quantity.view.northeast[0:n_halo, 0:n_halo] = quantity.np.nan
     quantity.view[:] = 2
-    print(quantity.data)
     fv3util.fill_scalar_corners(
         quantity=quantity,
         direction=direction,
@@ -80,7 +79,6 @@ def test_fill_scalar_corners_copies_from_halo(
         rank=rank,
         n_halo=n_halo,
     )
-    print(quantity.data)
     assert quantity.np.sum(quantity.np.isnan(quantity.data)) == 0
     assert quantity.np.all(quantity.view[:] == 2)  # should be unchanged
     quantity.np.testing.assert_array_equal(
@@ -265,8 +263,8 @@ def test_fill_scalar_corners_copies_from_halo(
                     [6, 7, 8, 9, 10, 11],
                     [12, 13, 14, 15, 16, 17],
                     [18, 19, 20, 21, 22, 23],
-                    [24, 25, 26, 27, 22, 16],
-                    [30, 31, 32, 33, 23, 17],
+                    [13, 19, 26, 27, 28, 29],
+                    [12, 18, 32, 33, 34, 35],
                 ]
             ).T,
             id="one_corner_x",

@@ -9,6 +9,7 @@ def boundary_data(quantity, boundary_type, n_points, interior=True):
         quantity.dims,
         quantity.origin,
         quantity.extent,
+        quantity.data.shape,
         boundary_type,
         n_points,
         interior,

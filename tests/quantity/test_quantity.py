@@ -65,7 +65,6 @@ def quantity(data, origin, extent, dims, units):
 
 def test_smaller_data_raises(data, origin, extent, dims, units):
     if len(data.shape) > 1:
-        print(data, data.shape, dims, origin, extent)
         try:
             small_data = data[0]
         except IndexError:

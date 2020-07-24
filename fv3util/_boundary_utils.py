@@ -1,5 +1,6 @@
 from . import constants
 import functools
+from ._exceptions import OutOfBoundsError
 
 
 def shift_boundary_slice_tuple(dims, origin, extent, boundary_type, slice_tuple):
@@ -53,9 +54,9 @@ def _get_offset(boundary_type, dim, origin, extent):
 
 
 @functools.lru_cache(maxsize=None)
-def get_boundary_slice(dims, origin, extent, boundary_type, n_halo, interior):
+def get_boundary_slice(dims, origin, extent, shape, boundary_type, n_halo, interior):
     boundary_slice = []
-    for dim, origin_1d, extent_1d in zip(dims, origin, extent):
+    for dim, origin_1d, extent_1d, shape_1d in zip(dims, origin, extent, shape):
         if dim in constants.INTERFACE_DIMS:
             n_overlap = 1
         else:
@@ -63,23 +64,33 @@ def get_boundary_slice(dims, origin, extent, boundary_type, n_halo, interior):
         n_points = n_halo
         at_start = boundary_at_start_of_dim(boundary_type, dim)
         if dim not in constants.HORIZONTAL_DIMS:
-            boundary_slice.append(slice(origin_1d, origin_1d + extent_1d))
+            start, stop = origin_1d, origin_1d + extent_1d
         elif at_start is None:
-            boundary_slice.append(slice(origin_1d, origin_1d + extent_1d))
+            start, stop = origin_1d, origin_1d + extent_1d
         elif at_start:
             edge_index = origin_1d
             if interior:
                 edge_index += n_overlap
-                boundary_slice.append(slice(edge_index, edge_index + n_points))
+                start, stop = edge_index, edge_index + n_points
             else:
-                boundary_slice.append(slice(edge_index - n_points, edge_index))
+                start, stop = edge_index - n_points, edge_index
         else:
             edge_index = origin_1d + extent_1d
             if interior:
                 edge_index -= n_overlap
-                boundary_slice.append(slice(edge_index - n_points, edge_index))
+                start, stop = edge_index - n_points, edge_index
             else:
-                boundary_slice.append(slice(edge_index, edge_index + n_points))
+                start, stop = edge_index, edge_index + n_points
+        if start < 0:
+            raise OutOfBoundsError(
+                f"boundary slice extends past start of domain on dimension {dim}"
+            )
+        elif stop > shape_1d:
+            raise OutOfBoundsError(
+                f"boundary slice extends past end of domain on dimension {dim}"
+            )
+        else:
+            boundary_slice.append(slice(start, stop))
     return tuple(boundary_slice)
 
 

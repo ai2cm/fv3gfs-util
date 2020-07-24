@@ -97,13 +97,6 @@ class BoundedArrayView:
     Indexing on the object itself (view[:]) is offset by the origin, and default
     start and end indices are modified to be the start and end of the compute domain.
 
-    Indexing on each of the edge attributes e.g. `west` and `east` is relative to
-    the origin (for start edges) or origin + extent (for end edges) for the
-    corresponding axis. Note directions are relative to the axis system as opposed to
-    physically zonal or meridional directions. For example, view.west[-2:0, :, :] would
-    retrieve two halo points along the edge. view.west[-2:0, 0:-1, :] would extend this
-    into any halo points
-
     For corner attributes e.g. `northwest`, modified indexing is done for the two
     axes according to the edges which make up the corner. In other words, indexing
     is offset relative to the intersection of th two edges which make the corner.
