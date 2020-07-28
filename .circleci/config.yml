@@ -19,10 +19,10 @@ jobs:
     steps:
       - checkout
       - run:
-        name: install MPI
-        command: |
-          sudo apt-get update
-          sudo apt-get install libopenmpi3
+          name: install MPI
+          command: |
+            sudo apt-get update
+            sudo apt-get install libopenmpi3
 
       # Download and cache dependencies
       - restore_cache:
