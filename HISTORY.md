@@ -7,7 +7,7 @@ latest
 v0.5.1
 ------
 
-- move mpi from fv3gfs-python tests into CircleCI
+- move mpi test from fv3gfs-python into this repo CircleCI
 
 v0.5.0
 ------
