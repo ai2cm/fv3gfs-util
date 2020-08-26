@@ -3,6 +3,14 @@ import pytest
 import numpy as np
 
 
+@pytest.fixture
+def start_data(request, numpy):
+    if isinstance(request.param, tuple):
+        return tuple(numpy.asarray(item) for item in request.param)
+    else:
+        return numpy.asarray(request.param)
+
+
 @pytest.mark.parametrize(
     "start_data, n_clockwise_rotations, dims, target_data",
     [
