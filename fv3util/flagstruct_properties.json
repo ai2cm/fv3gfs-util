@@ -29,7 +29,7 @@
         "location" : "Atm",
         "type_fortran": "real",
         "type_c": "c_double",
-        "type_cyth": "float"
+        "type_cyth": "REAL_t"
     },
     {
         "name": "do_adiabatic_init",
