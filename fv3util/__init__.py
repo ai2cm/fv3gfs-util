@@ -11,6 +11,7 @@ from .partitioner import (
     get_tile_index,
     get_tile_number,
 )
+from ._timing import Timer
 from .constants import (
     MASTER_RANK,
     X_DIM,
