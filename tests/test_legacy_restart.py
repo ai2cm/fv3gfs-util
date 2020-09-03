@@ -3,9 +3,9 @@ import os
 import xarray as xr
 import numpy as np
 import pytest
-import fv3util
-import fv3util._legacy_restart
-from fv3util.testing import DummyComm
+import fv3gfs.util
+import fv3gfs.util._legacy_restart
+from fv3gfs.util.testing import DummyComm
 
 TEST_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 DATA_DIRECTORY = os.path.join(TEST_DIRECTORY, "data")
@@ -19,15 +19,15 @@ def test_open_c12_restart_without_crashing(layout):
     shared_buffer = {}
     communicator_list = []
     for rank in range(total_ranks):
-        communicator = fv3util.CubedSphereCommunicator(
+        communicator = fv3gfs.util.CubedSphereCommunicator(
             DummyComm(rank, total_ranks, shared_buffer),
-            fv3util.CubedSpherePartitioner(fv3util.TilePartitioner(layout)),
+            fv3gfs.util.CubedSpherePartitioner(fv3gfs.util.TilePartitioner(layout)),
         )
         communicator_list.append(communicator)
     state_list = []
     for communicator in communicator_list:
         state_list.append(
-            fv3util.open_restart(
+            fv3gfs.util.open_restart(
                 os.path.join(DATA_DIRECTORY, "c12_restart"), communicator
             )
         )
@@ -38,16 +38,16 @@ def test_open_c12_restart_without_crashing(layout):
             if name == "time":
                 assert isinstance(value, datetime)
             else:
-                assert isinstance(value, fv3util.Quantity)
+                assert isinstance(value, fv3gfs.util.Quantity)
                 assert np.sum(np.isnan(value.view[:])) == 0
                 for dim, extent in zip(value.dims, value.extent):
-                    if dim == fv3util.X_DIM:
+                    if dim == fv3gfs.util.X_DIM:
                         assert extent == nx
-                    elif dim == fv3util.X_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.X_INTERFACE_DIM:
                         assert extent == nx + 1
-                    elif dim == fv3util.Y_DIM:
+                    elif dim == fv3gfs.util.Y_DIM:
                         assert extent == ny
-                    elif dim == fv3util.Y_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.Y_INTERFACE_DIM:
                         assert extent == ny + 1
 
 
@@ -59,15 +59,15 @@ def test_open_c12_restart_empty_to_state_without_crashing(layout):
     shared_buffer = {}
     communicator_list = []
     for rank in range(total_ranks):
-        communicator = fv3util.CubedSphereCommunicator(
+        communicator = fv3gfs.util.CubedSphereCommunicator(
             DummyComm(rank, total_ranks, shared_buffer),
-            fv3util.CubedSpherePartitioner(fv3util.TilePartitioner(layout)),
+            fv3gfs.util.CubedSpherePartitioner(fv3gfs.util.TilePartitioner(layout)),
         )
         communicator_list.append(communicator)
     state_list = []
     for communicator in communicator_list:
         state_list.append({})
-        fv3util.open_restart(
+        fv3gfs.util.open_restart(
             os.path.join(DATA_DIRECTORY, "c12_restart"),
             communicator,
             to_state=state_list[-1],
@@ -79,16 +79,16 @@ def test_open_c12_restart_empty_to_state_without_crashing(layout):
             if name == "time":
                 assert isinstance(value, datetime)
             else:
-                assert isinstance(value, fv3util.Quantity)
+                assert isinstance(value, fv3gfs.util.Quantity)
                 assert np.sum(np.isnan(value.view[:])) == 0
                 for dim, extent in zip(value.dims, value.extent):
-                    if dim == fv3util.X_DIM:
+                    if dim == fv3gfs.util.X_DIM:
                         assert extent == nx
-                    elif dim == fv3util.X_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.X_INTERFACE_DIM:
                         assert extent == nx + 1
-                    elif dim == fv3util.Y_DIM:
+                    elif dim == fv3gfs.util.Y_DIM:
                         assert extent == ny
-                    elif dim == fv3util.Y_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.Y_INTERFACE_DIM:
                         assert extent == ny + 1
 
 
@@ -100,15 +100,15 @@ def test_open_c12_restart_to_allocated_state_without_crashing(layout):
     shared_buffer = {}
     communicator_list = []
     for rank in range(total_ranks):
-        communicator = fv3util.CubedSphereCommunicator(
+        communicator = fv3gfs.util.CubedSphereCommunicator(
             DummyComm(rank, total_ranks, shared_buffer),
-            fv3util.CubedSpherePartitioner(fv3util.TilePartitioner(layout)),
+            fv3gfs.util.CubedSpherePartitioner(fv3gfs.util.TilePartitioner(layout)),
         )
         communicator_list.append(communicator)
     state_list = []
     for communicator in communicator_list:
         state_list.append(
-            fv3util.open_restart(
+            fv3gfs.util.open_restart(
                 os.path.join(DATA_DIRECTORY, "c12_restart"), communicator
             )
         )
@@ -117,7 +117,7 @@ def test_open_c12_restart_to_allocated_state_without_crashing(layout):
             if name != "time":
                 value.view[:] = np.nan
     for state, communicator in zip(state_list, communicator_list):
-        fv3util.open_restart(
+        fv3gfs.util.open_restart(
             os.path.join(DATA_DIRECTORY, "c12_restart"), communicator, to_state=state
         )
 
@@ -128,16 +128,16 @@ def test_open_c12_restart_to_allocated_state_without_crashing(layout):
             if name == "time":
                 assert isinstance(value, datetime)
             else:
-                assert isinstance(value, fv3util.Quantity)
+                assert isinstance(value, fv3gfs.util.Quantity)
                 assert np.sum(np.isnan(value.view[:])) == 0
                 for dim, extent in zip(value.dims, value.extent):
-                    if dim == fv3util.X_DIM:
+                    if dim == fv3gfs.util.X_DIM:
                         assert extent == nx
-                    elif dim == fv3util.X_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.X_INTERFACE_DIM:
                         assert extent == nx + 1
-                    elif dim == fv3util.Y_DIM:
+                    elif dim == fv3gfs.util.Y_DIM:
                         assert extent == ny
-                    elif dim == fv3util.Y_INTERFACE_DIM:
+                    elif dim == fv3gfs.util.Y_INTERFACE_DIM:
                         assert extent == ny + 1
 
 
@@ -149,7 +149,7 @@ def coupler_res_file_and_time():
 def test_get_current_date_from_coupler_res(coupler_res_file_and_time):
     filename, current_time = coupler_res_file_and_time
     with open(filename, "r") as f:
-        result = fv3util.io.get_current_date_from_coupler_res(f)
+        result = fv3gfs.util.io.get_current_date_from_coupler_res(f)
     assert result == current_time
 
 
@@ -177,7 +177,7 @@ def result_dims(data_array, new_dims):
 
 
 def test_apply_dims(data_array, new_dims, result_dims):
-    result = fv3util._legacy_restart.apply_dims(data_array, new_dims)
+    result = fv3gfs.util._legacy_restart.apply_dims(data_array, new_dims)
     np.testing.assert_array_equal(result.values, data_array.values)
     assert result.dims == result_dims
     assert result.attrs == data_array.attrs
@@ -211,7 +211,7 @@ def test_apply_dims(data_array, new_dims, result_dims):
     ],
 )
 def test_map_keys(old_dict, key_mapping, new_dict):
-    result = fv3util._legacy_restart.map_keys(old_dict, key_mapping)
+    result = fv3gfs.util._legacy_restart.map_keys(old_dict, key_mapping)
     assert result == new_dict
 
 
@@ -225,7 +225,7 @@ def test_map_keys(old_dict, key_mapping, new_dict):
     ],
 )
 def test_get_rank_suffix(rank, total_ranks, suffix):
-    result = fv3util._legacy_restart.get_rank_suffix(rank, total_ranks)
+    result = fv3gfs.util._legacy_restart.get_rank_suffix(rank, total_ranks)
     assert result == suffix
 
 
@@ -233,4 +233,4 @@ def test_get_rank_suffix(rank, total_ranks, suffix):
 def test_get_rank_suffix_invalid_total_ranks(invalid_total_ranks):
     with pytest.raises(ValueError):
         # total_ranks should be multiple of 6
-        fv3util._legacy_restart.get_rank_suffix(0, invalid_total_ranks)
+        fv3gfs.util._legacy_restart.get_rank_suffix(0, invalid_total_ranks)

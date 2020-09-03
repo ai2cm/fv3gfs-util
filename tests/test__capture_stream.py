@@ -3,7 +3,7 @@ import pytest
 import os
 import ctypes
 
-from fv3util import capture_stream
+from fv3gfs.util import capture_stream
 
 
 def get_libc():

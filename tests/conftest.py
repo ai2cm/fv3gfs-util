@@ -1,5 +1,5 @@
 import pytest
-import fv3util
+import fv3gfs.util
 import numpy as np
 
 try:
@@ -30,8 +30,8 @@ def numpy(backend):
         return cupy
     elif backend.startswith("gt4py"):
         if backend.endswith("numpy"):
-            return fv3util.testing.gt4py_numpy
+            return fv3gfs.util.testing.gt4py_numpy
         elif backend.endswith("cupy"):
-            return fv3util.testing.gt4py_cupy
+            return fv3gfs.util.testing.gt4py_cupy
     else:
         raise NotImplementedError()

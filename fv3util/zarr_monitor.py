@@ -6,7 +6,7 @@ import xarray as xr
 from . import constants, utils
 from .partitioner import CubedSpherePartitioner, subtile_slice
 
-logger = logging.getLogger("fv3util")
+logger = logging.getLogger("fv3gfs.util")
 
 __all__ = ["ZarrMonitor"]
 

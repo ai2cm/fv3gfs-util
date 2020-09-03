@@ -38,7 +38,7 @@ setup(
     install_requires=requirements,
     setup_requires=setup_requirements,
     tests_require=test_requirements,
-    name="fv3util",
+    name="fv3gfs-util",
     license="BSD license",
     long_description=readme + "\n\n" + history,
     packages=find_packages(),

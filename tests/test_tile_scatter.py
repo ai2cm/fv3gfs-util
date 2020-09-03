@@ -1,6 +1,6 @@
 import pytest
-from fv3util.testing import DummyComm
-import fv3util
+from fv3gfs.util.testing import DummyComm
+import fv3gfs.util
 
 
 def rank_scatter_results(communicator_list, quantity):
@@ -18,7 +18,7 @@ def get_tile_communicator_list(partitioner):
     tile_communicator_list = []
     for rank in range(total_ranks):
         tile_communicator_list.append(
-            fv3util.TileCommunicator(
+            fv3gfs.util.TileCommunicator(
                 comm=DummyComm(
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
@@ -31,14 +31,14 @@ def get_tile_communicator_list(partitioner):
 @pytest.mark.parametrize("layout", [(1, 1), (1, 2), (2, 1), (2, 2), (3, 3)])
 def test_interface_state_two_by_two_per_rank_scatter_tile(layout, numpy):
     state = {
-        "pos_j": fv3util.Quantity(
+        "pos_j": fv3gfs.util.Quantity(
             numpy.empty([layout[0] + 1, layout[1] + 1]),
-            dims=[fv3util.Y_INTERFACE_DIM, fv3util.X_INTERFACE_DIM],
+            dims=[fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             units="dimensionless",
         ),
-        "pos_i": fv3util.Quantity(
+        "pos_i": fv3gfs.util.Quantity(
             numpy.empty([layout[0] + 1, layout[1] + 1], dtype=numpy.int32),
-            dims=[fv3util.Y_INTERFACE_DIM, fv3util.X_INTERFACE_DIM],
+            dims=[fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             units="dimensionless",
         ),
     }
@@ -46,7 +46,7 @@ def test_interface_state_two_by_two_per_rank_scatter_tile(layout, numpy):
     state["pos_j"].view[:, :] = numpy.arange(0, layout[0] + 1)[:, None]
     state["pos_i"].view[:, :] = numpy.arange(0, layout[1] + 1)[None, :]
 
-    partitioner = fv3util.TilePartitioner(layout)
+    partitioner = fv3gfs.util.TilePartitioner(layout)
     tile_communicator_list = get_tile_communicator_list(partitioner)
     for communicator, rank_array in rank_scatter_results(
         tile_communicator_list, state["pos_j"]
@@ -75,24 +75,24 @@ def test_interface_state_two_by_two_per_rank_scatter_tile(layout, numpy):
 def test_centered_state_one_item_per_rank_scatter_tile(layout, numpy):
     total_ranks = layout[0] * layout[1]
     state = {
-        "rank": fv3util.Quantity(
+        "rank": fv3gfs.util.Quantity(
             numpy.empty([layout[0], layout[1]]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
-        "rank_pos_j": fv3util.Quantity(
+        "rank_pos_j": fv3gfs.util.Quantity(
             numpy.empty([layout[0], layout[1]]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
-        "rank_pos_i": fv3util.Quantity(
+        "rank_pos_i": fv3gfs.util.Quantity(
             numpy.empty([layout[0], layout[1]]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
     }
 
-    partitioner = fv3util.TilePartitioner(layout)
+    partitioner = fv3gfs.util.TilePartitioner(layout)
     for rank in range(total_ranks):
         state["rank"].view[numpy.unravel_index(rank, state["rank"].extent)] = rank
         j, i = partitioner.subtile_index(rank)
@@ -103,7 +103,7 @@ def test_centered_state_one_item_per_rank_scatter_tile(layout, numpy):
             numpy.unravel_index(rank, state["rank_pos_i"].extent)
         ] = i
 
-    partitioner = fv3util.TilePartitioner(layout)
+    partitioner = fv3gfs.util.TilePartitioner(layout)
     tile_communicator_list = get_tile_communicator_list(partitioner)
     for communicator, rank_array in rank_scatter_results(
         tile_communicator_list, state["rank"]
@@ -119,30 +119,30 @@ def test_centered_state_one_item_per_rank_with_halo_scatter_tile(layout, n_halo,
     extent = layout
     total_ranks = layout[0] * layout[1]
     state = {
-        "rank": fv3util.Quantity(
+        "rank": fv3gfs.util.Quantity(
             numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),
             extent=extent,
         ),
-        "rank_pos_j": fv3util.Quantity(
+        "rank_pos_j": fv3gfs.util.Quantity(
             numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),
             extent=extent,
         ),
-        "rank_pos_i": fv3util.Quantity(
+        "rank_pos_i": fv3gfs.util.Quantity(
             numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
-            dims=[fv3util.Y_DIM, fv3util.X_DIM],
+            dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),
             extent=extent,
         ),
     }
 
-    partitioner = fv3util.TilePartitioner(layout)
+    partitioner = fv3gfs.util.TilePartitioner(layout)
     for rank in range(total_ranks):
         state["rank"].view[numpy.unravel_index(rank, state["rank"].extent)] = rank
         j, i = partitioner.subtile_index(rank)

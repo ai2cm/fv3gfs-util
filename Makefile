@@ -33,7 +33,7 @@ help:
 	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 coverage: ## check code coverage quickly with the default Python
-	pytest --cov=fv3util --cov-report=html
+	pytest --cov=fv3gfs/util --cov-report=html
 	$(BROWSER) htmlcov/index.html
 
 test: ## run tests quickly with the default Python

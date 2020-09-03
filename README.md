@@ -1,5 +1,5 @@
-fv3util
-=======
+fv3gfs-util
+===========
 
 This package is the pure-python component of fv3gfs-python, included for testing and
 re-use in environments where compiling the Fortran model is unnecessary and difficult.

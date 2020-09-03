@@ -15,7 +15,7 @@ __all__ = [
     "HaloUpdateRequest",
 ]
 
-logger = logging.getLogger("fv3util")
+logger = logging.getLogger("fv3gfs.util")
 
 
 def bcast_metadata_list(comm, quantity_list):

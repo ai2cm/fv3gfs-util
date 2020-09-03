@@ -1,5 +1,5 @@
 import pytest
-from fv3util.buffer import send_buffer, recv_buffer
+from fv3gfs.util.buffer import send_buffer, recv_buffer
 import numpy as np
 
 

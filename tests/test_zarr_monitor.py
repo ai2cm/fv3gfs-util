@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 import pytest
 import xarray as xr
 import copy
-import fv3util
+import fv3gfs.util
 import logging
-from fv3util.testing import DummyComm
+from fv3gfs.util.testing import DummyComm
 
 
 logger = logging.getLogger("test_zarr_monitor")
@@ -52,12 +52,12 @@ def layout():
 
 @pytest.fixture
 def tile_partitioner(layout):
-    return fv3util.TilePartitioner(layout)
+    return fv3gfs.util.TilePartitioner(layout)
 
 
 @pytest.fixture
 def cube_partitioner(tile_partitioner):
-    return fv3util.CubedSpherePartitioner(tile_partitioner)
+    return fv3gfs.util.CubedSpherePartitioner(tile_partitioner)
 
 
 @pytest.fixture(params=["empty", "one_var_2d", "one_var_3d", "two_vars"])
@@ -66,18 +66,18 @@ def base_state(request, nz, ny, nx, numpy):
         return {}
     elif request.param == "one_var_2d":
         return {
-            "var1": fv3util.Quantity(numpy.ones([ny, nx]), dims=("y", "x"), units="m",)
+            "var1": fv3gfs.util.Quantity(numpy.ones([ny, nx]), dims=("y", "x"), units="m",)
         }
     elif request.param == "one_var_3d":
         return {
-            "var1": fv3util.Quantity(
+            "var1": fv3gfs.util.Quantity(
                 numpy.ones([nz, ny, nx]), dims=("z", "y", "x"), units="m",
             )
         }
     elif request.param == "two_vars":
         return {
-            "var1": fv3util.Quantity(numpy.ones([ny, nx]), dims=("y", "x"), units="m",),
-            "var2": fv3util.Quantity(
+            "var1": fv3gfs.util.Quantity(numpy.ones([ny, nx]), dims=("y", "x"), units="m",),
+            "var2": fv3gfs.util.Quantity(
                 numpy.ones([nz, ny, nx]), dims=("z", "y", "x"), units="degK",
             ),
         }
@@ -99,7 +99,7 @@ def state_list(base_state, n_times, start_time, time_step, numpy):
 
 def test_monitor_file_store(state_list, cube_partitioner, numpy):
     with tempfile.TemporaryDirectory(suffix=".zarr") as tempdir:
-        monitor = fv3util.ZarrMonitor(tempdir, cube_partitioner)
+        monitor = fv3gfs.util.ZarrMonitor(tempdir, cube_partitioner)
         for state in state_list:
             monitor.store(state)
         validate_store(state_list, tempdir, numpy)
@@ -170,17 +170,17 @@ def test_monitor_file_store_multi_rank_state(
     nz, ny, nx = shape
     ny_rank = int(ny / layout[0] + ny_rank_add)
     nx_rank = int(nx / layout[1] + nx_rank_add)
-    grid = fv3util.TilePartitioner(layout)
+    grid = fv3gfs.util.TilePartitioner(layout)
     time = datetime(2010, 6, 20, 6, 0, 0)
     timestep = timedelta(hours=1)
     total_ranks = 6 * layout[0] * layout[1]
-    partitioner = fv3util.CubedSpherePartitioner(grid)
+    partitioner = fv3gfs.util.CubedSpherePartitioner(grid)
     store = zarr.storage.DirectoryStore(tmpdir)
     shared_buffer = {}
     monitor_list = []
     for rank in range(total_ranks):
         monitor_list.append(
-            fv3util.ZarrMonitor(
+            fv3gfs.util.ZarrMonitor(
                 store,
                 partitioner,
                 "w",
@@ -193,7 +193,7 @@ def test_monitor_file_store_multi_rank_state(
         for rank in range(total_ranks):
             state = {
                 "time": time + i_t * timestep,
-                "var1": fv3util.Quantity(
+                "var1": fv3gfs.util.Quantity(
                     numpy.ones([nz, ny_rank, nx_rank]), dims=dims, units=units,
                 ),
             }
@@ -210,50 +210,50 @@ def test_monitor_file_store_multi_rank_state(
         pytest.param(
             (1, 1),
             (7, 6, 6),
-            [fv3util.Z_DIM, fv3util.Y_DIM, fv3util.X_DIM],
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             (7, 6, 6),
             id="single_chunk_tile_3d",
         ),
         pytest.param(
             (1, 1),
             (6, 6),
-            [fv3util.Y_DIM, fv3util.X_DIM],
+            [fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             (6, 6),
             id="single_chunk_tile_2d",
         ),
-        pytest.param((1, 1), (6,), [fv3util.Y_DIM], (6,), id="single_chunk_tile_1d"),
+        pytest.param((1, 1), (6,), [fv3gfs.util.Y_DIM], (6,), id="single_chunk_tile_1d"),
         pytest.param(
             (1, 1),
             (7, 6, 6),
-            [fv3util.Z_DIM, fv3util.Y_INTERFACE_DIM, fv3util.X_INTERFACE_DIM],
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             (7, 5, 5),
             id="single_chunk_tile_3d_interfaces",
         ),
         pytest.param(
             (2, 2),
             (7, 6, 6),
-            [fv3util.Z_DIM, fv3util.Y_DIM, fv3util.X_DIM],
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             (7, 3, 3),
             id="2_by_2_tile_3d",
         ),
         pytest.param(
             (2, 2),
             (6, 16, 6),
-            [fv3util.Y_DIM, fv3util.Z_DIM, fv3util.X_DIM],
+            [fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM, fv3gfs.util.X_DIM],
             (3, 16, 3),
             id="2_by_2_tile_3d_odd_dim_order",
         ),
         pytest.param(
             (2, 2),
             (7, 7, 7),
-            [fv3util.Z_DIM, fv3util.Y_INTERFACE_DIM, fv3util.X_INTERFACE_DIM],
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             (7, 3, 3),
             id="2_by_2_tile_3d_interfaces",
         ),
     ],
 )
 def test_array_chunks(layout, tile_array_shape, array_dims, target):
-    result = fv3util.zarr_monitor.array_chunks(layout, tile_array_shape, array_dims)
+    result = fv3gfs.util.zarr_monitor.array_chunks(layout, tile_array_shape, array_dims)
     assert result == target
 
 
@@ -272,8 +272,8 @@ def test_open_zarr_without_nans(cube_partitioner, numpy, backend, mask_and_scale
     store = {}
 
     # initialize store
-    monitor = fv3util.ZarrMonitor(store, cube_partitioner)
-    zero_quantity = fv3util.Quantity(numpy.zeros([10, 10]), dims=("y", "x"), units="m")
+    monitor = fv3gfs.util.ZarrMonitor(store, cube_partitioner)
+    zero_quantity = fv3gfs.util.Quantity(numpy.zeros([10, 10]), dims=("y", "x"), units="m")
     monitor.store({"var": zero_quantity})
 
     # open w/o dask using chunks=None
@@ -288,8 +288,8 @@ def test_values_preserved(cube_partitioner, numpy):
     store = {}
 
     # initialize store
-    monitor = fv3util.ZarrMonitor(store, cube_partitioner)
-    quantity = fv3util.Quantity(
+    monitor = fv3gfs.util.ZarrMonitor(store, cube_partitioner)
+    quantity = fv3gfs.util.Quantity(
         numpy.random.uniform(size=(10, 10)), dims=dims, units=units
     )
     monitor.store({"var": quantity})
