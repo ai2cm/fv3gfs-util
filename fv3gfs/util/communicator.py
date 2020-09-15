@@ -429,8 +429,9 @@ class CubedSphereCommunicator(Communicator):
         """
         if not on_c_grid(x_quantity, y_quantity):
             raise ValueError("vector must be defined on Arakawa C-grid")
-        send_requests = self._Isend_vector_shared_boundary(x_quantity, y_quantity)
-        recv_requests = self._Irecv_vector_shared_boundary(x_quantity, y_quantity)
+        tag = self._get_halo_tag()
+        send_requests = self._Isend_vector_shared_boundary(x_quantity, y_quantity, tag=tag)
+        recv_requests = self._Irecv_vector_shared_boundary(x_quantity, y_quantity, tag=tag)
         return HaloUpdateRequest(send_requests, recv_requests)
 
     def synchronize_vector_interfaces(self, x_quantity: Quantity, y_quantity: Quantity):
@@ -509,7 +510,7 @@ class CubedSphereCommunicator(Communicator):
             )
         return send_requests
 
-    def _Isend_vector_shared_boundary(self, x_quantity, y_quantity):
+    def _Isend_vector_shared_boundary(self, x_quantity, y_quantity, tag=0):
         south_boundary = self.boundaries[constants.SOUTH]
         west_boundary = self.boundaries[constants.WEST]
         south_data = x_quantity.view.southwest.sel(
@@ -545,12 +546,12 @@ class CubedSphereCommunicator(Communicator):
         if west_boundary.n_clockwise_rotations in (1, 2):
             west_data = -west_data
         send_requests = [
-            self._Isend(x_quantity.np, south_data, dest=south_boundary.to_rank),
-            self._Isend(y_quantity.np, west_data, dest=west_boundary.to_rank),
+            self._Isend(x_quantity.np, south_data, dest=south_boundary.to_rank, tag=tag),
+            self._Isend(y_quantity.np, west_data, dest=west_boundary.to_rank, tag=tag),
         ]
         return send_requests
 
-    def _Irecv_vector_shared_boundary(self, x_quantity, y_quantity):
+    def _Irecv_vector_shared_boundary(self, x_quantity, y_quantity, tag=0):
         north_rank = self.boundaries[constants.NORTH].to_rank
         east_rank = self.boundaries[constants.EAST].to_rank
         north_data = x_quantity.view.northwest.sel(
@@ -570,8 +571,8 @@ class CubedSphereCommunicator(Communicator):
             }
         )
         recv_requests = [
-            self._Irecv(x_quantity.np, north_data, source=north_rank),
-            self._Irecv(y_quantity.np, east_data, source=east_rank),
+            self._Irecv(x_quantity.np, north_data, source=north_rank, tag=tag),
+            self._Irecv(y_quantity.np, east_data, source=east_rank, tag=tag),
         ]
         return recv_requests
 
