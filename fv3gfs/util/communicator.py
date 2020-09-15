@@ -430,8 +430,12 @@ class CubedSphereCommunicator(Communicator):
         if not on_c_grid(x_quantity, y_quantity):
             raise ValueError("vector must be defined on Arakawa C-grid")
         tag = self._get_halo_tag()
-        send_requests = self._Isend_vector_shared_boundary(x_quantity, y_quantity, tag=tag)
-        recv_requests = self._Irecv_vector_shared_boundary(x_quantity, y_quantity, tag=tag)
+        send_requests = self._Isend_vector_shared_boundary(
+            x_quantity, y_quantity, tag=tag
+        )
+        recv_requests = self._Irecv_vector_shared_boundary(
+            x_quantity, y_quantity, tag=tag
+        )
         return HaloUpdateRequest(send_requests, recv_requests)
 
     def synchronize_vector_interfaces(self, x_quantity: Quantity, y_quantity: Quantity):
@@ -546,7 +550,9 @@ class CubedSphereCommunicator(Communicator):
         if west_boundary.n_clockwise_rotations in (1, 2):
             west_data = -west_data
         send_requests = [
-            self._Isend(x_quantity.np, south_data, dest=south_boundary.to_rank, tag=tag),
+            self._Isend(
+                x_quantity.np, south_data, dest=south_boundary.to_rank, tag=tag
+            ),
             self._Isend(y_quantity.np, west_data, dest=west_boundary.to_rank, tag=tag),
         ]
         return send_requests
