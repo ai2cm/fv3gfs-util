@@ -149,6 +149,7 @@ def counting_quantity_list(total_ranks, numpy, dtype, units=units):
         quantity_list.append((x_quantity, y_quantity))
     return quantity_list
 
+
 @pytest.mark.parametrize("layout", [(1, 1)], indirect=True)
 def test_specific_edges_synced_correctly_on_first_rank(
     counting_quantity_list, communicator_list, subtests, numpy, rank_target_list
@@ -185,8 +186,12 @@ def test_specific_edges_synced_correctly_on_first_rank(
 
 @pytest.mark.parametrize("layout", [(3, 3)], indirect=True)
 def test_interior_edges_synced_correctly_on_first_tile(
-    counting_quantity_list, communicator_list, subtests, numpy, rank_target_list,
-    total_ranks
+    counting_quantity_list,
+    communicator_list,
+    subtests,
+    numpy,
+    rank_target_list,
+    total_ranks,
 ):
     """
     A test that a couple chosen edges send the correct data.
@@ -213,6 +218,3 @@ def test_interior_edges_synced_correctly_on_first_tile(
     numpy.testing.assert_array_equal(
         fifth_rank_x.data, 4 * 6 + numpy.array([[0, 1], [2, 3], [18, 19]])
     )
-# Rank[9-14, 27-32, 45-50]: u[is:ie, je+1],  Rank[0-1, 3-4, 6-7, 18-19, 21-22, 24-25, 36-37, 39-40, 42-43 ]: v[ie + 1, js:js]
-# Tiles 1, 3, 5 north edge
-# 3x3 tile 0 center, 
