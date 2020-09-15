@@ -55,6 +55,9 @@ def communicator_list(cube_partitioner):
 
 @pytest.fixture
 def rank_quantity_list(total_ranks, numpy, dtype, units=units):
+    """
+    Quantities whose values are equal to the rank
+    """
     quantity_list = []
     for rank in range(total_ranks):
         x_data = numpy.empty((3, 2), dtype=dtype)
@@ -112,5 +115,59 @@ def test_correct_ranks_are_synchronized_with_no_halos(
     for (x_quantity, y_quantity), (target_x, target_y) in zip(
         rank_quantity_list, rank_target_list
     ):
-        numpy.testing.assert_array_equal(x_quantity.data, target_x)
-        numpy.testing.assert_array_equal(y_quantity.data, target_y)
+        numpy.testing.assert_array_equal(numpy.abs(x_quantity.data), target_x)
+        numpy.testing.assert_array_equal(numpy.abs(y_quantity.data), target_y)
+
+
+@pytest.fixture
+def counting_quantity_list(total_ranks, numpy, dtype, units=units):
+    """
+    A list of quantities whose entries increase sequentially in memory,
+    with y values starting at 36 and x values starting at 0.
+    """
+    quantity_list = []
+    for rank in range(total_ranks):
+        x_data = numpy.array([[0, 1], [2, 3], [4, 5]]) + 6 * rank
+        x_quantity = fv3gfs.util.Quantity(
+            x_data,
+            dims=(fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_DIM),
+            units=units,
+            origin=(0, 0),
+            extent=(3, 2),
+        )
+        y_data = 36 + numpy.array([[0, 1, 2], [3, 4, 5]]) + 6 * rank
+        y_quantity = fv3gfs.util.Quantity(
+            y_data,
+            dims=(fv3gfs.util.Y_DIM, fv3gfs.util.X_INTERFACE_DIM),
+            units=units,
+            origin=(0, 0),
+            extent=(2, 3),
+        )
+        quantity_list.append((x_quantity, y_quantity))
+    return quantity_list
+
+
+def test_specific_edges_synced_correctly_on_first_rank(
+    counting_quantity_list, communicator_list, subtests, numpy, rank_target_list
+):
+    """
+    A test that a couple chosen edges send the correct data.
+    
+    Each example takes significant time to manually determine the correct answer,
+    so this is limited to the first rank. Please add more cases as needed.
+    """
+    req_list = []
+    for communicator, (x_quantity, y_quantity) in zip(
+        communicator_list, counting_quantity_list
+    ):
+        req = communicator.start_synchronize_vector_interfaces(x_quantity, y_quantity)
+        req_list.append(req)
+    for req in req_list:
+        req.wait()
+    first_rank_x, first_rank_y = counting_quantity_list[0]
+    numpy.testing.assert_array_equal(
+        first_rank_y.data, numpy.array([[36, 37, 42], [39, 40, 45]])
+    )
+    numpy.testing.assert_array_equal(
+        first_rank_x.data, numpy.array([[0, 1], [2, 3], [-3-36-12, -36-12]])
+    )
