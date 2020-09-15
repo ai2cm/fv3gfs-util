@@ -1,4 +1,4 @@
-from typing import Mapping, Union
+from typing import Tuple, Mapping, Union
 from .quantity import Quantity
 from .partitioner import CubedSpherePartitioner, TilePartitioner
 from . import constants
@@ -292,7 +292,12 @@ class CubedSphereCommunicator(Communicator):
         self.timer: Timer = Timer()
         self._tile_communicator = None
         self._boundaries = None
+        self._last_halo_tag = 0
         super(CubedSphereCommunicator, self).__init__(comm)
+
+    def _get_halo_tag(self) -> int:
+        self._last_halo_tag += 1
+        return self._last_halo_tag
 
     @property
     def boundaries(self) -> Mapping[int, Boundary]:
@@ -340,11 +345,12 @@ class CubedSphereCommunicator(Communicator):
         """
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        send_requests = self._Isend_halos(quantity, n_points)
-        recv_requests = self._Irecv_halos(quantity, n_points)
+        tag = self._get_halo_tag()
+        send_requests = self._Isend_halos(quantity, n_points, tag=tag)
+        recv_requests = self._Irecv_halos(quantity, n_points, tag=tag)
         return HaloUpdateRequest(send_requests, recv_requests)
 
-    def _Isend_halos(self, quantity: Quantity, n_points: int):
+    def _Isend_halos(self, quantity: Quantity, n_points: int, tag: int = 0):
         send_requests = []
         for boundary in self.boundaries.values():
             with self.timer.clock("pack"):
@@ -356,10 +362,12 @@ class CubedSphereCommunicator(Communicator):
                 data = rotate_scalar_data(
                     data, quantity.dims, quantity.np, -boundary.n_clockwise_rotations
                 )
-            send_requests.append(self._Isend(quantity.np, data, dest=boundary.to_rank))
+            send_requests.append(
+                self._Isend(quantity.np, data, dest=boundary.to_rank, tag=tag)
+            )
         return send_requests
 
-    def _Irecv_halos(self, quantity: Quantity, n_points: int):
+    def _Irecv_halos(self, quantity: Quantity, n_points: int, tag: int = 0):
         recv_requests = []
         for boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("unpack"):
@@ -372,7 +380,7 @@ class CubedSphereCommunicator(Communicator):
                 self.rank,
             )
             recv_requests.append(
-                self._Irecv(quantity.np, dest_view, source=boundary.to_rank)
+                self._Irecv(quantity.np, dest_view, source=boundary.to_rank, tag=tag)
             )
         return recv_requests
 
@@ -461,12 +469,17 @@ class CubedSphereCommunicator(Communicator):
         """
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        send_requests = self._Isend_vector_halos(x_quantity, y_quantity, n_points)
-        recv_requests = self._Irecv_halos(x_quantity, n_points)
-        recv_requests.extend(self._Irecv_halos(y_quantity, n_points))
+        tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
+        send_requests = self._Isend_vector_halos(
+            x_quantity, y_quantity, n_points, tags=(tag1, tag2)
+        )
+        recv_requests = self._Irecv_halos(x_quantity, n_points, tag=tag1)
+        recv_requests.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
         return HaloUpdateRequest(send_requests, recv_requests)
 
-    def _Isend_vector_halos(self, x_quantity, y_quantity, n_points):
+    def _Isend_vector_halos(
+        self, x_quantity, y_quantity, n_points, tags: Tuple[int, int] = (0, 0)
+    ):
         send_requests = []
         for boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("pack"):
@@ -489,10 +502,10 @@ class CubedSphereCommunicator(Communicator):
                     y_data.shape,
                 )
             send_requests.append(
-                self._Isend(x_quantity.np, x_data, dest=boundary.to_rank)
+                self._Isend(x_quantity.np, x_data, dest=boundary.to_rank, tag=tags[0])
             )
             send_requests.append(
-                self._Isend(y_quantity.np, y_data, dest=boundary.to_rank)
+                self._Isend(y_quantity.np, y_data, dest=boundary.to_rank, tag=tags[1])
             )
         return send_requests
 
