@@ -13,8 +13,11 @@ def units():
 
 
 @pytest.fixture
-def layout():
-    return (1, 1)
+def layout(request):
+    try:
+        return request.param
+    except AttributeError:
+        return (1, 1)
 
 
 @pytest.fixture
@@ -135,7 +138,7 @@ def counting_quantity_list(total_ranks, numpy, dtype, units=units):
             origin=(0, 0),
             extent=(3, 2),
         )
-        y_data = 36 + numpy.array([[0, 1, 2], [3, 4, 5]]) + 6 * rank
+        y_data = 6 * total_ranks + numpy.array([[0, 1, 2], [3, 4, 5]]) + 6 * rank
         y_quantity = fv3gfs.util.Quantity(
             y_data,
             dims=(fv3gfs.util.Y_DIM, fv3gfs.util.X_INTERFACE_DIM),
@@ -146,7 +149,7 @@ def counting_quantity_list(total_ranks, numpy, dtype, units=units):
         quantity_list.append((x_quantity, y_quantity))
     return quantity_list
 
-
+@pytest.mark.parametrize("layout", [(1, 1)], indirect=True)
 def test_specific_edges_synced_correctly_on_first_rank(
     counting_quantity_list, communicator_list, subtests, numpy, rank_target_list
 ):
@@ -171,3 +174,45 @@ def test_specific_edges_synced_correctly_on_first_rank(
     numpy.testing.assert_array_equal(
         first_rank_x.data, numpy.array([[0, 1], [2, 3], [-3 - 36 - 12, -36 - 12]])
     )
+    second_rank_x, second_rank_y = counting_quantity_list[1]
+    numpy.testing.assert_array_equal(
+        second_rank_y.data, numpy.array([[42, 43, -19], [45, 46, -18]])
+    )
+    numpy.testing.assert_array_equal(
+        second_rank_x.data, numpy.array([[6, 7], [8, 9], [12, 13]])
+    )
+
+
+@pytest.mark.parametrize("layout", [(3, 3)], indirect=True)
+def test_interior_edges_synced_correctly_on_first_tile(
+    counting_quantity_list, communicator_list, subtests, numpy, rank_target_list,
+    total_ranks
+):
+    """
+    A test that a couple chosen edges send the correct data.
+    
+    Each example takes significant time to manually determine the correct answer,
+    so this is limited to the first rank. Please add more cases as needed.
+    """
+    req_list = []
+    for communicator, (x_quantity, y_quantity) in zip(
+        communicator_list, counting_quantity_list
+    ):
+        req = communicator.start_synchronize_vector_interfaces(x_quantity, y_quantity)
+        req_list.append(req)
+    for req in req_list:
+        req.wait()
+    _, first_rank_y = counting_quantity_list[0]
+    numpy.testing.assert_array_equal(
+        first_rank_y.data, total_ranks * 6 + numpy.array([[0, 1, 6], [3, 4, 9]])
+    )
+    fifth_rank_x, fifth_rank_y = counting_quantity_list[4]
+    numpy.testing.assert_array_equal(
+        fifth_rank_y.data, (total_ranks + 4) * 6 + numpy.array([[0, 1, 6], [3, 4, 9]])
+    )
+    numpy.testing.assert_array_equal(
+        fifth_rank_x.data, 4 * 6 + numpy.array([[0, 1], [2, 3], [18, 19]])
+    )
+# Rank[9-14, 27-32, 45-50]: u[is:ie, je+1],  Rank[0-1, 3-4, 6-7, 18-19, 21-22, 24-25, 36-37, 39-40, 42-43 ]: v[ie + 1, js:js]
+# Tiles 1, 3, 5 north edge
+# 3x3 tile 0 center, 

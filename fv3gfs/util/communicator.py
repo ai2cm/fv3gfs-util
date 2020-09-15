@@ -513,7 +513,7 @@ class CubedSphereCommunicator(Communicator):
             x_quantity.np,
             -south_boundary.n_clockwise_rotations,
         )
-        if self.partitioner.tile_index(self.rank) % 2 == 1:
+        if south_boundary.n_clockwise_rotations in (3, 2):
             south_data = -south_data
         west_data = y_quantity.view.southwest.sel(
             **{
@@ -529,7 +529,7 @@ class CubedSphereCommunicator(Communicator):
             y_quantity.np,
             -west_boundary.n_clockwise_rotations,
         )
-        if self.partitioner.tile_index(self.rank) % 2 == 0:
+        if west_boundary.n_clockwise_rotations in (1, 2):
             west_data = -west_data
         send_requests = [
             self._Isend(x_quantity.np, south_data, dest=south_boundary.to_rank),
