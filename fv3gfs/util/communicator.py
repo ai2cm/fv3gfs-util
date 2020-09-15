@@ -511,7 +511,7 @@ class CubedSphereCommunicator(Communicator):
             south_data,
             [constants.X_DIM],
             x_quantity.np,
-            -south_boundary.n_clockwise_rotations
+            -south_boundary.n_clockwise_rotations,
         )
         if self.partitioner.tile_index(self.rank) % 2 == 1:
             south_data = -south_data
@@ -527,7 +527,7 @@ class CubedSphereCommunicator(Communicator):
             west_data,
             [constants.Y_DIM],
             y_quantity.np,
-            -west_boundary.n_clockwise_rotations
+            -west_boundary.n_clockwise_rotations,
         )
         if self.partitioner.tile_index(self.rank) % 2 == 0:
             west_data = -west_data
@@ -599,10 +599,17 @@ class CubedSphereCommunicator(Communicator):
             "returned by start_vector_halo_update"
         )
 
+
 def on_c_grid(x_quantity, y_quantity):
-    if constants.X_DIM not in x_quantity.dims or constants.Y_INTERFACE_DIM not in x_quantity.dims:
+    if (
+        constants.X_DIM not in x_quantity.dims
+        or constants.Y_INTERFACE_DIM not in x_quantity.dims
+    ):
         return False
-    if constants.Y_DIM not in y_quantity.dims or constants.X_INTERFACE_DIM not in y_quantity.dims:
+    if (
+        constants.Y_DIM not in y_quantity.dims
+        or constants.X_INTERFACE_DIM not in y_quantity.dims
+    ):
         return False
     else:
         return True

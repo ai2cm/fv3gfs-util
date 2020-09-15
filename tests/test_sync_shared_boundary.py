@@ -169,5 +169,5 @@ def test_specific_edges_synced_correctly_on_first_rank(
         first_rank_y.data, numpy.array([[36, 37, 42], [39, 40, 45]])
     )
     numpy.testing.assert_array_equal(
-        first_rank_x.data, numpy.array([[0, 1], [2, 3], [-3-36-12, -36-12]])
+        first_rank_x.data, numpy.array([[0, 1], [2, 3], [-3 - 36 - 12, -36 - 12]])
     )
