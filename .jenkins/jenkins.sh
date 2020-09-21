@@ -50,11 +50,12 @@ envloc=`/bin/pwd`
 popd > /dev/null
 
 # Download the env
-. ${envloc}/env.sh
+module load git
+git submodule update
 
 # setup module environment and default queue
-test -f ${envloc}/env/machineEnvironment.sh || exitError 1201 ${LINENO} "cannot find machineEnvironment.sh script"
-. ${envloc}/env/machineEnvironment.sh
+test -f ${envloc}/buildenv/machineEnvironment.sh || exitError 1201 ${LINENO} "cannot find machineEnvironment.sh script"
+. ${envloc}/buildenv/machineEnvironment.sh
 
 # check that host (define in machineEnvironment.sh) and slave are consistent
 echo ${host} | grep "${shortslave}" || exitError 1006 ${LINENO} "host does not contain slave"
@@ -63,10 +64,10 @@ echo ${host} | grep "${shortslave}" || exitError 1006 ${LINENO} "host does not c
 root=`dirname $0`
 
 # load machine dependent environment
-if [ ! -f ${envloc}/env/env.${host}.sh ] ; then
-    exitError 1202 ${LINENO} "could not find ${envloc}/env/env.${host}.sh"
+if [ ! -f ${envloc}/buildenv/env.${host}.sh ] ; then
+    exitError 1202 ${LINENO} "could not find ${envloc}/buildenv/env.${host}.sh"
 fi
-. ${envloc}/env/env.${host}.sh
+. ${envloc}/buildenv/env.${host}.sh
 
 
 # check if action script exists

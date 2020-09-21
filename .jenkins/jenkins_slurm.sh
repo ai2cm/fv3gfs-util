@@ -7,26 +7,27 @@ maxsleep=9000
 envloc=`pwd`"/.jenkins"
 
 # Download the env
-. ${envloc}/env.sh
+module load git
+git submodule update
 
 # setup module environment and default queue
-if [ ! -f ${envloc}/env/machineEnvironment.sh ] ; then
-    echo "Error 1201 test.sh ${LINENO}: Could not find ${envloc}/env/machineEnvironment.sh"
+if [ ! -f ${envloc}/buildenv/machineEnvironment.sh ] ; then
+    echo "Error 1201 test.sh ${LINENO}: Could not find ${envloc}/buildenv/machineEnvironment.sh"
     exit 1
 fi
-. ${envloc}/env/machineEnvironment.sh
+. ${envloc}/buildenv/machineEnvironment.sh
 
 # load machine dependent functions
-if [ ! -f ${envloc}/env/env.${host}.sh ] ; then
-    exitError 1202 ${LINENO} "could not find ${envloc}/env/env.${host}.sh"
+if [ ! -f ${envloc}/buildenv/env.${host}.sh ] ; then
+    exitError 1202 ${LINENO} "could not find ${envloc}/buildenv/env.${host}.sh"
 fi
-. ${envloc}/env/env.${host}.sh
+. ${envloc}/buildenv/env.${host}.sh
 
 # load slurm tools
-if [ ! -f ${envloc}/env/slurmTools.sh ] ; then
-    exitError 1203 ${LINENO} "could not find ${envloc}/env/slurmTools.sh"
+if [ ! -f ${envloc}/buildenv/slurmTools.sh ] ; then
+    exitError 1203 ${LINENO} "could not find ${envloc}/buildenv/slurmTools.sh"
 fi
-. ${envloc}/env/slurmTools.sh
+. ${envloc}/buildenv/slurmTools.sh
 
 # set up virtual env, if not already set up
 python3 -m venv venv
@@ -35,7 +36,7 @@ pip3 install --upgrade pip setuptools wheel
 pip3 install -r requirements.txt
 
 # check if SLURM script exists
-script="${envloc}/env/submit.${host}.slurm"
+script="${envloc}/buildenv/submit.${host}.slurm"
 test -f ${script} || exitError 1252 ${LINENO} "cannot find script ${script}"
 
 # some global variables
