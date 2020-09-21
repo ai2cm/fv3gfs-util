@@ -24,6 +24,10 @@
 envloc="."
 set -e
 
+# some global variables
+action="$1"
+optarg="$2"
+
 # get latest version of buildenv
 git submodule update --init
 
