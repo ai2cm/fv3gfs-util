@@ -21,54 +21,19 @@
 # BUILD_URL          Full URL of this build, like http://server:port/jenkins/job/foo/15/
 # JOB_URL            Full URL of this job, like http://server:port/jenkins/job/foo/
 
-exitError()
-{
-    echo "ERROR $1: $3" 1>&2
-    echo "ERROR     LOCATION=$0" 1>&2
-    echo "ERROR     LINE=$2" 1>&2
-    exit $1
-}
+envloc="."
 
-# echo basic setup
-echo "####### executing: $0 $* (PID=$$ HOST=$HOSTNAME TIME=`date '+%D %H:%M:%S'`)"
-
-# start timer
-T="$(date +%s)"
-
-# check sanity of environment
-test -n "$1" || exitError 1001 ${LINENO} "must pass an argument"
-test -n "${slave}" || exitError 1005 ${LINENO} "slave is not defined"
-shortslave=`echo ${slave} | sed 's/[0-9]*$//g'`
-
-# some global variables
-action="$1"
-optarg="$2"
-
-# check presence of env directory
-pushd `dirname $0` > /dev/null
-envloc=`/bin/pwd`
-popd > /dev/null
-
-# Download the env
-module load git
-git submodule update
+# get latest version of buildenv
+git submodule update --init
 
 # setup module environment and default queue
-test -f ${envloc}/buildenv/machineEnvironment.sh || exitError 1201 ${LINENO} "cannot find machineEnvironment.sh script"
 . ${envloc}/buildenv/machineEnvironment.sh
 
-# check that host (define in machineEnvironment.sh) and slave are consistent
-echo ${host} | grep "${shortslave}" || exitError 1006 ${LINENO} "host does not contain slave"
-
-# get root directory of where jenkins.sh is sitting
-root=`dirname $0`
-
 # load machine dependent environment
-if [ ! -f ${envloc}/buildenv/env.${host}.sh ] ; then
-    exitError 1202 ${LINENO} "could not find ${envloc}/buildenv/env.${host}.sh"
-fi
 . ${envloc}/buildenv/env.${host}.sh
 
+# load scheduler tools (provides run_command)
+. ${envloc}/buildenv/schedulerTools.sh
 
 # check if action script exists
 script="${root}/actions/${action}.sh"
@@ -80,18 +45,10 @@ python3 -m venv venv
 pip3 install --upgrade pip setuptools wheel
 pip3 install -r requirements.txt
 
-${script} ${optarg}
+echo "I am running on host ${host} with scheduler ${scheduler}."
+run_command ${script} ${optarg}
+
 if [ $? -ne 0 ] ; then
   exitError 1510 ${LINENO} "problem while executing script ${script}"
 fi
 echo "### ACTION ${action} SUCCESSFUL"
-
-# end timer and report time taken
-T="$(($(date +%s)-T))"
-printf "####### time taken: %02d:%02d:%02d:%02d\n" "$((T/86400))" "$((T/3600%24))" "$((T/60%60))" "$((T%60))"
-
-# no errors encountered
-echo "####### finished: $0 $* (PID=$$ HOST=$HOSTNAME TIME=`date '+%D %H:%M:%S'`)"
-exit 0
-
-# so long, Earthling!
