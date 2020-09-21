@@ -21,8 +21,11 @@
 # BUILD_URL          Full URL of this build, like http://server:port/jenkins/job/foo/15/
 # JOB_URL            Full URL of this job, like http://server:port/jenkins/job/foo/
 
-envloc="."
 set -e
+
+# get root directory of where jenkins.sh is sitting
+root=`dirname $0`
+envloc=`dirname $0`
 
 # some global variables
 action="$1"
