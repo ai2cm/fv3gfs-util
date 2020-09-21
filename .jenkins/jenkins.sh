@@ -26,7 +26,10 @@ envloc="."
 # get latest version of buildenv
 git submodule update --init
 
+
+
 # setup module environment and default queue
+test -f ${envloc}/buildenv/machineEnvironment.sh || exitError 1201 ${LINENO} "cannot find machineEnvironment.sh script"
 . ${envloc}/buildenv/machineEnvironment.sh
 
 # load machine dependent environment
