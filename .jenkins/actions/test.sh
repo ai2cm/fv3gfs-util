@@ -49,13 +49,11 @@ parseOptions $*
 # run tests
 echo "### run tests"
 if [ ! -f requirements.txt ] ; then
-    exitError 1205 ${LINENO} "could not find requirements_dev.txt, run from top directory"
+    exitError 1205 ${LINENO} "could not find requirements.txt, run from top directory"
 fi
 python3 -m venv venv
 . ./venv/bin/activate
-pip3 install --upgrade pip setuptools wheel
-pip3 install -r requirements.txt
-pip3 install -e .
+pip3 install --no-deps -e .
 pytest --junitxml results.xml tests
 
 deactivate

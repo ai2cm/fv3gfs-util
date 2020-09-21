@@ -60,7 +60,7 @@ module unload cray-python
 module unload pycuda
 . ./venv/bin/activate
 pip3 install -r requirements.txt
-pip3 install . cupy-cuda101 pytest==5.4.3
+pip3 install . cupy-cuda102
 pip3 install git+git://github.com/GridTools/gt4py.git@204838ea0e88a30b6eb41babbd58fb8a86d14a0e
 pytest --junitxml results.xml tests
 

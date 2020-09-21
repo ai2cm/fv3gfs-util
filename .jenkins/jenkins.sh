@@ -73,6 +73,12 @@ fi
 script="${root}/actions/${action}.sh"
 test -f "${script}" || exitError 1301 ${LINENO} "cannot find script ${script}"
 
+# set up virtual env, if not already set up
+python3 -m venv venv
+. ./venv/bin/activate
+pip3 install --upgrade pip setuptools wheel
+pip3 install -r requirements.txt
+
 ${script} ${optarg}
 if [ $? -ne 0 ] ; then
   exitError 1510 ${LINENO} "problem while executing script ${script}"

@@ -28,6 +28,12 @@ if [ ! -f ${envloc}/env/slurmTools.sh ] ; then
 fi
 . ${envloc}/env/slurmTools.sh
 
+# set up virtual env, if not already set up
+python3 -m venv venv
+. ./venv/bin/activate
+pip3 install --upgrade pip setuptools wheel
+pip3 install -r requirements.txt
+
 # check if SLURM script exists
 script="${envloc}/env/submit.${host}.slurm"
 test -f ${script} || exitError 1252 ${LINENO} "cannot find script ${script}"

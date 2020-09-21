@@ -1,4 +1,4 @@
-envdir="${envloc}/env"
+envdir="${envloc}/buildenv"
 if [ -d "${envdir}" ] ; then
     pushd "${envdir}" > /dev/null
         `module load git; git pull &>/dev/null`
