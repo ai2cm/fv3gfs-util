@@ -46,9 +46,11 @@ T="$(date +%s)"
 parseOptions $*
 
 # we only run this on HPC
+set +e
 module load daint-gpu
 module load cray-python
 module load pycuda
+set -e
 
 # run tests
 echo "### run tests"
@@ -56,8 +58,10 @@ if [ ! -f requirements.txt ] ; then
     exitError 1205 ${LINENO} "could not find requirements.txt, run from top directory"
 fi
 python3 -m venv venv
+set +e
 module unload cray-python
 module unload pycuda
+set -e
 . ./venv/bin/activate
 pip3 install -r requirements.txt
 pip3 install . cupy-cuda102
