@@ -35,13 +35,13 @@ optarg="$2"
 git submodule update --init
 
 # setup module environment and default queue
-. ${envloc}/buildenv/machineEnvironment.sh
+. ${envloc}/env/machineEnvironment.sh
 
 # load machine dependent environment
-. ${envloc}/buildenv/env.${host}.sh
+. ${envloc}/env/env.${host}.sh
 
 # load scheduler tools (provides run_command)
-. ${envloc}/buildenv/schedulerTools.sh
+. ${envloc}/env/schedulerTools.sh
 
 set -e
 
