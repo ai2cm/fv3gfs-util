@@ -21,7 +21,7 @@
 # BUILD_URL          Full URL of this build, like http://server:port/jenkins/job/foo/15/
 # JOB_URL            Full URL of this job, like http://server:port/jenkins/job/foo/
 
-set -e -x
+set -x +e
 
 # get root directory of where jenkins.sh is sitting
 root=`dirname $0`
@@ -42,6 +42,8 @@ git submodule update --init
 
 # load scheduler tools (provides run_command)
 . ${envloc}/buildenv/schedulerTools.sh
+
+set -e
 
 # check if action script exists
 script="${root}/actions/${action}.sh"
