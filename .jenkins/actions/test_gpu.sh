@@ -65,7 +65,7 @@ set -e
 . ./venv/bin/activate
 pip3 install -r requirements.txt
 pip3 install . cupy-cuda102
-pytest --junitxml results.xml tests
+pytest --junitxml results.xml --gpu-only tests
 
 deactivate
 
