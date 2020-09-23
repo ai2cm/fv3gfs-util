@@ -55,6 +55,8 @@ python3 -m venv venv
 pip3 install --upgrade pip setuptools wheel
 pip3 install -r requirements.txt
 
+set +e
+
 echo "I am running on host ${host} with scheduler ${scheduler}."
 run_command ${script} ${optarg}
 
