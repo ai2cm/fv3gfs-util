@@ -21,7 +21,7 @@
 # BUILD_URL          Full URL of this build, like http://server:port/jenkins/job/foo/15/
 # JOB_URL            Full URL of this job, like http://server:port/jenkins/job/foo/
 
-set -e
+set -e -x
 
 # get root directory of where jenkins.sh is sitting
 root=`dirname $0`
