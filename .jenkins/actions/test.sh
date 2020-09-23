@@ -53,7 +53,7 @@ if [ ! -f requirements.txt ] ; then
 fi
 python3 -m venv venv
 . ./venv/bin/activate
-pip3 install --no-deps -e .
+pip3 install -e .
 pytest --junitxml results.xml tests
 
 deactivate
