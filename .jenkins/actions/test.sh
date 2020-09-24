@@ -45,6 +45,13 @@ T="$(date +%s)"
 # parse command line options (pass all of them to function)
 parseOptions $*
 
+if [ "${target}" == "gpu"] ; then
+    # we only run this on HPC
+    set +e
+    module load cray-python
+    module load pycuda
+    set -e
+fi
 
 # run tests
 echo "### run tests"
@@ -53,6 +60,14 @@ if [ ! -f requirements.txt ] ; then
 fi
 python3 -m venv venv
 . ./venv/bin/activate
+
+if [ "${target}" == "gpu"] ; then
+    set +e
+    module unload cray-python
+    module unload pycuda
+    set -e
+    pip3 install cupy-cuda102
+fi
 pip3 install .
 pytest --junitxml results.xml tests
 

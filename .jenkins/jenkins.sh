@@ -57,6 +57,10 @@ pip3 install -r requirements.txt
 
 set +e
 
+if [ "${target}" == "cpu" ] ; then
+  scheduler = "none"
+fi
+
 echo "I am running on host ${host} with scheduler ${scheduler}."
 run_command ${script} ${optarg}
 
