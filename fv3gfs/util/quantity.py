@@ -332,7 +332,7 @@ class Quantity:
             data_array.attrs["units"],
             origin=origin,
             extent=extent,
-            gt4py_backend=gt4py_backend
+            gt4py_backend=gt4py_backend,
         )
 
     def __repr__(self):
