@@ -191,7 +191,9 @@ class _ZarrVariableWriter:
             else:
                 raise err
         except TypeError as err:
-            if err.args[0].startswith("Implicit conversion to a NumPy array is not allowed."):
+            if err.args[0].startswith(
+                "Implicit conversion to a NumPy array is not allowed."
+            ):
                 self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
             else:
                 raise err
