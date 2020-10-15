@@ -382,7 +382,7 @@ class Quantity:
             # initialize storage from self._data
             # when GDP-2 is merged, we can instead use the data in self._data to
             # initialize the storage, instead of making a copy.
-            self._data = self.storage.data
+            self._data = self.np.asarray(self._storage.data)
         return self._storage
 
     @property
