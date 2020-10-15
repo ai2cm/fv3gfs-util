@@ -387,7 +387,10 @@ class Quantity:
             # initialize storage from self._data
             # when GDP-2 is merged, we can instead use the data in self._data to
             # initialize the storage, instead of making a copy.
-            self._data = self.np.asarray(self._storage.data)
+            if isinstance(self._data, np.ndarray):
+                self._data = self.np.asarray(self._storage.data)
+            elif isinstance(self._data, cupy.ndarray):
+                self._data = self._storage.gpu_view
         return self._storage
 
     @property
