@@ -123,7 +123,7 @@ class DummyComm:
                     i for i, val in enumerate(gather_buffer) if val is None
                 ]
                 raise ConcurrencyError(
-                    f"gather called on master rank before ranks {uncalled_ranks}"
+                    f"gather called on root rank before ranks {uncalled_ranks}"
                 )
             for i, sendbuf in enumerate(gather_buffer):
                 recvbuf[i, :] = sendbuf
@@ -133,10 +133,9 @@ class DummyComm:
         self._put_send_recv(sendbuf, dest)
 
     def Isend(self, sendbuf, dest, **kwargs):
-        result = self.Send(sendbuf, dest)
 
         def send():
-            return result
+            return self.Send(sendbuf, dest)
 
         return AsyncResult(send)
 
