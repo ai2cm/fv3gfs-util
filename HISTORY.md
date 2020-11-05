@@ -17,6 +17,7 @@ in the `coupler_nml` namelist.
 - Halo updates now use tagged send/recv operations, which prevents deadlocks in certain situations
 - Quantity.data is now guaranteed to be a numpy or cupy array matching its `.np` module, and will no longer be a gt4py Storage
 - Quantity accepts a `gt4py_backend` on initialize which is used to create its `.storage` if one was not used on initialize
+- parent MPI rank now referred to as "root" rank in variable names and documentation
 
 v0.5.1
 ------
