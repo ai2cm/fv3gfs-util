@@ -86,7 +86,7 @@ class BoundaryArrayView:
             self._dims, self._origin, self._extent, self._boundary_type, index
         )
 
-    def sel(self, **kwargs: (slice, int)) -> np.ndarray:
+    def sel(self, **kwargs: Union[slice, int]) -> np.ndarray:
         """Convenience method to perform indexing using dimension names
         without knowing dimension order.
         
