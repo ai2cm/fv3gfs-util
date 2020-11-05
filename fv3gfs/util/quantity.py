@@ -300,7 +300,6 @@ class Quantity:
             dtype=data.dtype,
             gt4py_backend=gt4py_backend,
         )
-        self._attrs = {}
         self._compute_domain_view = BoundedArrayView(
             self.data, self.dims, self.origin, self.extent
         )
@@ -399,23 +398,9 @@ class Quantity:
         return self.metadata.gt4py_backend
 
     @property
-    def attrs(self) -> dict:
-        return dict(**self._attrs, units=self._metadata.units)
-
-    @property
     def dims(self) -> Tuple[str, ...]:
         """names of each dimension"""
         return self.metadata.dims
-
-    @property
-    def values(self) -> np.ndarray:
-        warnings.warn(
-            "values exists only for backwards-compatibility with DataArray and will be removed, use .view[:] instead",
-            DeprecationWarning,
-        )
-        return_array = np.asarray(self.view[:])
-        return_array.flags.writeable = False
-        return return_array
 
     @property
     def view(self) -> BoundedArrayView:
@@ -439,7 +424,7 @@ class Quantity:
 
     @property
     def data_array(self) -> xr.DataArray:
-        return xr.DataArray(self.view[:], dims=self.dims, attrs=self.attrs)
+        return xr.DataArray(self.view[:], dims=self.dims, attrs={"units": self.units})
 
     @property
     def np(self) -> ModuleType:

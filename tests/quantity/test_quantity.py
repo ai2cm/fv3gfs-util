@@ -106,7 +106,6 @@ def test_data_change_affects_quantity(data, quantity, numpy):
 
 def test_quantity_units(quantity, units):
     assert quantity.units == units
-    assert quantity.attrs["units"] == units
 
 
 def test_quantity_dims(quantity, dims):
@@ -214,7 +213,7 @@ def test_shift_slice(slice_in, shift, extent, slice_out):
     ],
 )
 def test_to_data_array(quantity):
-    assert quantity.data_array.attrs == quantity.attrs
+    assert quantity.data_array.attrs == {"units": quantity.units}
     assert quantity.data_array.dims == quantity.dims
     assert quantity.data_array.shape == quantity.extent
     np.testing.assert_array_equal(quantity.data_array.values, quantity.view[:])
