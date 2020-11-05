@@ -133,8 +133,10 @@ class DummyComm:
         self._put_send_recv(sendbuf, dest)
 
     def Isend(self, sendbuf, dest, **kwargs):
+        result = self.Send(sendbuf, dest)
+
         def send():
-            return self.Send(sendbuf, dest)
+            return result
 
         return AsyncResult(send)
 
