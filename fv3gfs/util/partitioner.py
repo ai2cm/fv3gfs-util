@@ -133,17 +133,41 @@ class TilePartitioner:
             overlap=overlap,
         )
 
-    def on_tile_top(self, rank: int) -> bool:
-        return on_tile_top(self.subtile_index(rank), self.layout)
+    def on_tile_north(self, rank: int) -> bool:
+        """Indicates whether the rank is on the top y-edge of the tile.
 
-    def on_tile_bottom(self, rank: int) -> bool:
-        return on_tile_bottom(self.subtile_index(rank))
+        Note that "tile north" is in terms of the x and y axes,
+        and may actually be south, east, or any other direction in the sense of
+        a compass.
+        """
+        return on_tile_north(self.subtile_index(rank), self.layout)
 
-    def on_tile_left(self, rank: int) -> bool:
-        return on_tile_left(self.subtile_index(rank))
+    def on_tile_south(self, rank: int) -> bool:
+        """Indicates whether the rank is on the bottom y-edge of the tile.
 
-    def on_tile_right(self, rank: int) -> bool:
-        return on_tile_right(self.subtile_index(rank), self.layout)
+        Note that "tile south" is in terms of the x and y axes,
+        and may actually be north, east, or any other direction in the sense of
+        a compass.
+        """
+        return on_tile_south(self.subtile_index(rank))
+
+    def on_tile_west(self, rank: int) -> bool:
+        """Indicates whether the rank is on the left x-edge of the tile.
+
+        Note that "tile west" is in terms of the x and y axes,
+        and may actually be south, east, or any other direction in the sense of
+        a compass.
+        """
+        return on_tile_west(self.subtile_index(rank))
+
+    def on_tile_east(self, rank: int) -> bool:
+        """Indicates whether the rank is on the right x-edge of the tile.
+
+        Note that "tile west" is in terms of the x and y axes,
+        and may actually be south, west, or any other direction in the sense of
+        a compass.
+        """
+        return on_tile_east(self.subtile_index(rank), self.layout)
 
     def boundary(self, boundary_type: str, rank: int) -> bd.SimpleBoundary:
         """Returns a boundary of the requested type for a given rank.
@@ -176,7 +200,7 @@ class TilePartitioner:
         return boundary
 
     def _left_edge(self, rank: int) -> bd.SimpleBoundary:
-        if self.on_tile_left(rank):
+        if self.on_tile_west(rank):
             to_rank = rank + self.layout[1] - 1
         else:
             to_rank = rank - 1
@@ -188,7 +212,7 @@ class TilePartitioner:
         )
 
     def _right_edge(self, rank: int) -> bd.SimpleBoundary:
-        if self.on_tile_right(rank):
+        if self.on_tile_east(rank):
             to_rank = rank - self.layout[1] + 1
         else:
             to_rank = rank + 1
@@ -200,7 +224,7 @@ class TilePartitioner:
         )
 
     def _top_edge(self, rank: int) -> bd.SimpleBoundary:
-        if self.on_tile_top(rank):
+        if self.on_tile_north(rank):
             to_rank = rank - (self.layout[0] - 1) * self.layout[1]
         else:
             to_rank = rank + self.layout[1]
@@ -212,7 +236,7 @@ class TilePartitioner:
         )
 
     def _bottom_edge(self, rank: int) -> bd.SimpleBoundary:
-        if self.on_tile_bottom(rank):
+        if self.on_tile_south(rank):
             to_rank = rank + (self.layout[0] - 1) * self.layout[1]
         else:
             to_rank = rank - self.layout[1]
@@ -240,9 +264,15 @@ class TilePartitioner:
         )
 
     def fliplr_rank(self, rank: int) -> int:
+        """Returns the rank position where this rank would be if you flipped the
+        tile along a vertical axis.
+        """
         return fliplr_subtile_rank(rank, self.layout)
 
     def rotate_rank(self, rank: int, n_clockwise_rotations: int) -> int:
+        """Returns the rank position where this rank would be if you
+        rotated the tile's ranks clockwise while keeping the axes constant.
+        """
         return rotate_subtile_rank(rank, self.layout, n_clockwise_rotations)
 
 
@@ -272,7 +302,7 @@ class CubedSpherePartitioner:
         """
         if not isinstance(tile, TilePartitioner):
             raise TypeError("tile must be a TilePartitioner")
-        self.tile = tile
+        self.tile: TilePartitioner = tile
 
     @classmethod
     def from_namelist(cls, namelist):
@@ -288,7 +318,10 @@ class CubedSpherePartitioner:
             raise NotImplementedError("currently only square layouts are supported")
 
     def tile_index(self, rank: int) -> Tuple[int, int]:
-        """Returns the tile index of a given rank"""
+        """Returns the tile index of a given rank.
+        
+        For example, the first rank on each tile has tile rank 0.
+        """
         return get_tile_index(rank, self.total_ranks)
 
     def tile_root_rank(self, rank: int) -> int:
@@ -335,7 +368,7 @@ class CubedSpherePartitioner:
 
     def _left_edge(self, rank: int) -> bd.SimpleBoundary:
         self._ensure_square_layout()
-        if self.tile.on_tile_left(rank):
+        if self.tile.on_tile_west(rank):
             if is_even(self.tile_index(rank)):
                 to_root_rank = self.tile_root_rank(rank - 2 * self.tile.total_ranks)
                 tile_rank = rank % self.tile.total_ranks
@@ -359,7 +392,7 @@ class CubedSpherePartitioner:
 
     def _right_edge(self, rank: int) -> bd.SimpleBoundary:
         self._ensure_square_layout()
-        if self.tile.on_tile_right(rank):
+        if self.tile.on_tile_east(rank):
             if not is_even(self.tile_index(rank)):
                 to_root_rank = self.tile_root_rank(rank + 2 * self.tile.total_ranks)
                 tile_rank = rank % self.tile.total_ranks
@@ -381,7 +414,7 @@ class CubedSpherePartitioner:
 
     def _top_edge(self, rank: int) -> bd.SimpleBoundary:
         self._ensure_square_layout()
-        if self.tile.on_tile_top(rank):
+        if self.tile.on_tile_north(rank):
             if is_even(self.tile_index(rank)):
                 to_root_rank = (self.tile_index(rank) + 2) * self.tile.total_ranks
                 tile_rank = rank % self.tile.total_ranks
@@ -403,7 +436,7 @@ class CubedSpherePartitioner:
 
     def _bottom_edge(self, rank: int) -> bd.SimpleBoundary:
         self._ensure_square_layout()
-        if self.tile.on_tile_bottom(rank) and not is_even(self.tile_index(rank)):
+        if self.tile.on_tile_south(rank) and not is_even(self.tile_index(rank)):
             to_root_rank = (self.tile_index(rank) - 2) * self.tile.total_ranks
             tile_rank = rank % self.tile.total_ranks
             to_tile_rank = self.tile.fliplr_rank(self.tile.rotate_rank(tile_rank, 1))
@@ -415,15 +448,15 @@ class CubedSpherePartitioner:
             )
         else:
             boundary = self.tile.boundary(SOUTH, rank=rank)
-            if self.tile.on_tile_bottom(rank):
+            if self.tile.on_tile_south(rank):
                 boundary.to_rank -= self.tile.total_ranks
         return boundary
 
     def _top_left_corner(self, rank: int) -> bd.SimpleBoundary:
-        if self.tile.on_tile_top(rank) and self.tile.on_tile_left(rank):
+        if self.tile.on_tile_north(rank) and self.tile.on_tile_west(rank):
             corner = None
         else:
-            if is_even(self.tile_index(rank)) and on_tile_left(
+            if is_even(self.tile_index(rank)) and on_tile_west(
                 self.tile.subtile_index(rank)
             ):
                 second_edge = self._left_edge
@@ -435,12 +468,12 @@ class CubedSpherePartitioner:
         return corner
 
     def _top_right_corner(self, rank: int) -> bd.SimpleBoundary:
-        if on_tile_top(self.tile.subtile_index(rank), self.layout) and on_tile_right(
+        if on_tile_north(self.tile.subtile_index(rank), self.layout) and on_tile_east(
             self.tile.subtile_index(rank), self.layout
         ):
             corner = None
         else:
-            if is_even(self.tile_index(rank)) and on_tile_top(
+            if is_even(self.tile_index(rank)) and on_tile_north(
                 self.tile.subtile_index(rank), self.layout
             ):
                 second_edge = self._bottom_edge
@@ -452,12 +485,12 @@ class CubedSpherePartitioner:
         return corner
 
     def _bottom_left_corner(self, rank: int) -> bd.SimpleBoundary:
-        if on_tile_bottom(self.tile.subtile_index(rank)) and on_tile_left(
+        if on_tile_south(self.tile.subtile_index(rank)) and on_tile_west(
             self.tile.subtile_index(rank)
         ):
             corner = None
         else:
-            if not is_even(self.tile_index(rank)) and on_tile_bottom(
+            if not is_even(self.tile_index(rank)) and on_tile_south(
                 self.tile.subtile_index(rank)
             ):
                 second_edge = self._top_edge
@@ -469,12 +502,12 @@ class CubedSpherePartitioner:
         return corner
 
     def _bottom_right_corner(self, rank: int) -> bd.SimpleBoundary:
-        if on_tile_bottom(self.tile.subtile_index(rank)) and on_tile_right(
+        if on_tile_south(self.tile.subtile_index(rank)) and on_tile_east(
             self.tile.subtile_index(rank), self.layout
         ):
             corner = None
         else:
-            if not is_even(self.tile_index(rank)) and on_tile_bottom(
+            if not is_even(self.tile_index(rank)) and on_tile_south(
                 self.tile.subtile_index(rank)
             ):
                 second_edge = self._bottom_edge
@@ -503,19 +536,19 @@ class CubedSpherePartitioner:
         )
 
 
-def on_tile_left(subtile_index: Tuple[int, int]) -> bool:
+def on_tile_west(subtile_index: Tuple[int, int]) -> bool:
     return subtile_index[1] == 0
 
 
-def on_tile_right(subtile_index: Tuple[int, int], layout: Tuple[int, int]) -> bool:
+def on_tile_east(subtile_index: Tuple[int, int], layout: Tuple[int, int]) -> bool:
     return subtile_index[1] == layout[1] - 1
 
 
-def on_tile_top(subtile_index: Tuple[int, int], layout: Tuple[int, int]) -> bool:
+def on_tile_north(subtile_index: Tuple[int, int], layout: Tuple[int, int]) -> bool:
     return subtile_index[0] == layout[0] - 1
 
 
-def on_tile_bottom(subtile_index: Tuple[int, int]) -> bool:
+def on_tile_south(subtile_index: Tuple[int, int]) -> bool:
     return subtile_index[0] == 0
 
 

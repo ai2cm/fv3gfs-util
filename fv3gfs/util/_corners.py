@@ -109,10 +109,10 @@ def fill_scalar_corners(
         raise ValueError("second dimension must be in y-direction")
     if direction not in ("x", "y"):
         raise TypeError(f"direction must be one of 'x' or 'y', received {direction}")
-    on_north = tile_partitioner.on_tile_top(rank)
-    on_south = tile_partitioner.on_tile_bottom(rank)
-    on_east = tile_partitioner.on_tile_right(rank)
-    on_west = tile_partitioner.on_tile_left(rank)
+    on_north = tile_partitioner.on_tile_north(rank)
+    on_south = tile_partitioner.on_tile_south(rank)
+    on_east = tile_partitioner.on_tile_east(rank)
+    on_west = tile_partitioner.on_tile_west(rank)
     # for interface variables, the edge exists on both sides of the corner, so
     # we need to copy data *after* that edge. shift=1 does this, shift=0
     # does nothing
