@@ -99,9 +99,7 @@ class TileCommunicator(Communicator):
         if self.rank == constants.ROOT_RANK and send_quantity is None:
             raise TypeError("send_quantity is a required argument on the root rank")
         if self.rank == constants.ROOT_RANK:
-            metadata = self.comm.bcast(
-                send_quantity.metadata, root=constants.ROOT_RANK
-            )
+            metadata = self.comm.bcast(send_quantity.metadata, root=constants.ROOT_RANK)
         else:
             metadata = self.comm.bcast(None, root=constants.ROOT_RANK)
         shape = self.partitioner.subtile_extent(metadata)
@@ -186,10 +184,7 @@ class TileCommunicator(Communicator):
                 result = recv_quantity
         else:
             self._Gather(
-                send_quantity.np,
-                send_quantity.view[:],
-                None,
-                root=constants.ROOT_RANK,
+                send_quantity.np, send_quantity.view[:], None, root=constants.ROOT_RANK,
             )
             result = None
         return result

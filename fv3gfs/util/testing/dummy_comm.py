@@ -133,7 +133,6 @@ class DummyComm:
         self._put_send_recv(sendbuf, dest)
 
     def Isend(self, sendbuf, dest, **kwargs):
-
         def send():
             return self.Send(sendbuf, dest)
 
