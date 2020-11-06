@@ -104,7 +104,7 @@ class ZarrMonitor:
         """
         self._ensure_writers_are_consistent(state)
         for name, quantity in state.items():
-            self._writers[name].append(quantity)
+            self._writers[name].append(quantity)  # type: ignore[index]
 
 
 class _ZarrVariableWriter:
@@ -188,6 +188,15 @@ class _ZarrVariableWriter:
         except ValueError as err:
             if err.args[0] == "object __array__ method not producing an array":
                 self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
+        except TypeError as err:
+            if err.args[0].startswith(
+                "Implicit conversion to a NumPy array is not allowed."
+            ):
+                self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
 
         self.i_time += 1
 

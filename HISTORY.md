@@ -20,6 +20,9 @@ in the `coupler_nml` namelist.
 - parent MPI rank now referred to as "root" rank in variable names and documentation
 - Removed Quantity.attrs and Quantity.values, instead use Quantity.data_array.attrs or Quantity.data_array.values if needed
 
+Fixes:
+- Fixed a bug where quantity.storage and quantity.data could be out of sync if the quantity was initialized using data and a gt4py backend string
+
 v0.5.1
 ------
 

@@ -1,11 +1,11 @@
-from typing import Tuple, Iterable, Dict, Union, Sequence
-from types import ModuleType
+from typing import Tuple, Iterable, Dict, Union, Sequence, cast
 import warnings
 import dataclasses
 import numpy as np
 import xarray as xr
 from ._boundary_utils import shift_boundary_slice_tuple, bound_default_slice
 from . import constants
+from .types import NumpyModule
 
 try:
     import cupy
@@ -42,7 +42,7 @@ class QuantityMetadata:
         return dict(zip(self.dims, self.extent))
 
     @property
-    def np(self) -> ModuleType:
+    def np(self) -> NumpyModule:
         """numpy-like module used to interact with the data"""
         if issubclass(self.data_type, cupy.ndarray):
             return cupy
@@ -244,10 +244,10 @@ class Quantity:
     def __init__(
         self,
         data,
-        dims: Iterable[str],
+        dims: Sequence[str],
         units: str,
-        origin: Iterable[int] = None,
-        extent: Iterable[int] = None,
+        origin: Sequence[int] = None,
+        extent: Sequence[int] = None,
         gt4py_backend: Union[str, None] = None,
     ):
         """
@@ -308,8 +308,8 @@ class Quantity:
     def from_data_array(
         cls,
         data_array: xr.DataArray,
-        origin: Iterable[int] = None,
-        extent: Iterable[int] = None,
+        origin: Sequence[int] = None,
+        extent: Sequence[int] = None,
         gt4py_backend: Union[str, None] = None,
     ) -> "Quantity":
         """
@@ -327,7 +327,7 @@ class Quantity:
             raise ValueError("need units attribute to create Quantity from DataArray")
         return cls(
             data_array.values,
-            data_array.dims,
+            cast(Tuple[str], data_array.dims),
             data_array.attrs["units"],
             origin=origin,
             extent=extent,
@@ -341,7 +341,7 @@ class Quantity:
             f"    extent={self.extent}\n)"
         )
 
-    def sel(self, **kwargs: (slice, int)) -> np.ndarray:
+    def sel(self, **kwargs: Union[slice, int]) -> np.ndarray:
         """Convenience method to perform indexing on `view` using dimension names
         without knowing dimension order.
         
@@ -366,7 +366,7 @@ class Quantity:
             raise ImportError("gt4py is not installed")
         elif self._storage is None and self.gt4py_backend is None:
             raise TypeError(
-                f"Quantity was initialized with a non-storage type and "
+                "Quantity was initialized with a non-storage type and "
                 "no gt4py backend was given"
             )
         elif self._storage is None:
@@ -382,6 +382,14 @@ class Quantity:
                 mask=None,
             )
             self._storage[...] = self._data
+            # storage must initialize new memory. when GDP-2 is merged, we can instead
+            # initialize storage from self._data
+            # when GDP-2 is merged, we can instead use the data in self._data to
+            # initialize the storage, instead of making a copy.
+            if isinstance(self._data, np.ndarray):
+                self._data = self.np.asarray(self._storage.data)
+            elif isinstance(self._data, cupy.ndarray):
+                self._data = self._storage.gpu_view
         return self._storage
 
     @property
@@ -427,7 +435,7 @@ class Quantity:
         return xr.DataArray(self.view[:], dims=self.dims, attrs={"units": self.units})
 
     @property
-    def np(self) -> ModuleType:
+    def np(self) -> NumpyModule:
         return self.metadata.np
 
     def transpose(self, target_dims: Sequence[Union[str, Iterable[str]]]) -> "Quantity":
@@ -462,7 +470,7 @@ class Quantity:
         target_dims = _collapse_dims(target_dims, self.dims)
         transpose_order = [self.dims.index(dim) for dim in target_dims]
         return Quantity(
-            self.np.transpose(self.data, transpose_order),
+            self.np.transpose(self.data, transpose_order),  # type: ignore[attr-defined]
             dims=transpose_sequence(self.dims, transpose_order),
             units=self.units,
             origin=transpose_sequence(self.origin, transpose_order),
