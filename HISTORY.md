@@ -19,6 +19,7 @@ in the `coupler_nml` namelist.
 - Quantity accepts a `gt4py_backend` on initialize which is used to create its `.storage` if one was not used on initialize
 - parent MPI rank now referred to as "root" rank in variable names and documentation
 - Removed Quantity.attrs and Quantity.values, instead use Quantity.data_array.attrs or Quantity.data_array.values if needed
+- An exception is now raised if storage is passed to Quantity for its data value and an explicitly passed gt4py_backend keyword argument does not match the backend used by the storage.
 
 Fixes:
 - Fixed a bug where quantity.storage and quantity.data could be out of sync if the quantity was initialized using data and a gt4py backend string
