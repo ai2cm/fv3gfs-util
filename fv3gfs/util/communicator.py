@@ -1,4 +1,4 @@
-from typing import Tuple, Mapping, Union
+from typing import Tuple, Mapping, Optional, cast
 from .quantity import Quantity
 from .partitioner import CubedSpherePartitioner, TilePartitioner
 from . import constants
@@ -85,7 +85,9 @@ class TileCommunicator(Communicator):
             self.comm.Gather(send, recv, **kwargs)
 
     def scatter(
-        self, send_quantity: Quantity = None, recv_quantity: Quantity = None
+        self,
+        send_quantity: Optional[Quantity] = None,
+        recv_quantity: Optional[Quantity] = None,
     ) -> Quantity:
         """Transfer subtile regions of a full-tile quantity
         from the tile master rank to all subtiles.
@@ -99,6 +101,7 @@ class TileCommunicator(Communicator):
         if self.rank == constants.MASTER_RANK and send_quantity is None:
             raise TypeError("send_quantity is a required argument on the master rank")
         if self.rank == constants.MASTER_RANK:
+            send_quantity = cast(Quantity, send_quantity)
             metadata = self.comm.bcast(
                 send_quantity.metadata, root=constants.MASTER_RANK
             )
@@ -113,6 +116,7 @@ class TileCommunicator(Communicator):
                 gt4py_backend=metadata.gt4py_backend,
             )
         if self.rank == constants.MASTER_RANK:
+            send_quantity = cast(Quantity, send_quantity)
             with array_buffer(
                 metadata.np.empty,
                 (self.partitioner.total_ranks,) + shape,
@@ -140,7 +144,7 @@ class TileCommunicator(Communicator):
 
     def gather(
         self, send_quantity: Quantity, recv_quantity: Quantity = None
-    ) -> Union[Quantity, None]:
+    ) -> Optional[Quantity]:
         """Transfer subtile regions of a full-tile quantity
         from each rank to the tile master rank.
         
@@ -151,6 +155,7 @@ class TileCommunicator(Communicator):
         Returns:
             recv_quantity: quantity if on master rank, otherwise None
         """
+        result: Optional[Quantity]
         if self.rank == constants.MASTER_RANK:
             with array_buffer(
                 send_quantity.np.empty,
@@ -194,7 +199,7 @@ class TileCommunicator(Communicator):
             result = None
         return result
 
-    def gather_state(self, send_state: dict = None, recv_state: dict = None):
+    def gather_state(self, send_state=None, recv_state=None):
         """Transfer a state dictionary from subtile ranks to the tile master rank.
 
         'time' is assumed to be the same on all ranks, and its value will be set
@@ -224,7 +229,7 @@ class TileCommunicator(Communicator):
                     recv_state[name] = tile_quantity
         return recv_state
 
-    def scatter_state(self, send_state: dict = None, recv_state: dict = None):
+    def scatter_state(self, send_state=None, recv_state=None):
         """Transfer a state dictionary from the tile master rank to all subtiles.
         
         Args:
@@ -290,8 +295,8 @@ class CubedSphereCommunicator(Communicator):
         """
         self.partitioner: CubedSpherePartitioner = partitioner
         self.timer: Timer = Timer()
-        self._tile_communicator = None
-        self._boundaries = None
+        self._tile_communicator: Optional[TileCommunicator] = None
+        self._boundaries: Optional[Mapping[int, Boundary]] = None
         self._last_halo_tag = 0
         super(CubedSphereCommunicator, self).__init__(comm)
 
@@ -315,7 +320,7 @@ class CubedSphereCommunicator(Communicator):
         """communicator for within a tile"""
         if self._tile_communicator is None:
             self._initialize_tile_communicator()
-        return self._tile_communicator
+        return cast(TileCommunicator, self._tile_communicator)
 
     def _initialize_tile_communicator(self):
         tile_comm = self.comm.Split(
