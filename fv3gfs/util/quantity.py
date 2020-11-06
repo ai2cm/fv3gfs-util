@@ -266,6 +266,11 @@ class Quantity:
         if isinstance(data, (int, float, list)):
             data = np.asarray(data)
         elif gt4py is not None and isinstance(data, gt4py.storage.storage.Storage):
+            if gt4py_backend is not None and gt4py_backend != data.backend:
+                raise ValueError(
+                    f"storage backend {data.backend} from given data "
+                    f"does not match explicitly passed backend {gt4py_backend}"
+                )
             gt4py_backend = data.backend
             if isinstance(data, gt4py.storage.storage.GPUStorage):
                 self._storage = data
@@ -303,6 +308,11 @@ class Quantity:
         self._compute_domain_view = BoundedArrayView(
             self.data, self.dims, self.origin, self.extent
         )
+
+        if gt4py_backend is not None:
+            # eager storage generation will convert cupy to numpy arrays or vice
+            # versa as necessary if gt4py_backend is given
+            self.storage  # trigger initialization of the storage eagerly
 
     @classmethod
     def from_data_array(

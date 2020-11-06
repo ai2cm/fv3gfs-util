@@ -72,6 +72,24 @@ def test_numpy(quantity, backend):
         assert quantity.np is np
 
 
+@pytest.mark.parametrize(
+    "backend", ["gt4py_numpy"], indirect=["backend"]
+)
+@pytest.mark.parametrize("n_halo", [3], indirect=True)
+def test_exception_when_storage_backend_is_not_kwarg_backend(
+    data, origin, extent, dims, units
+):
+    with pytest.raises(ValueError):
+        fv3gfs.util.Quantity(
+            data,
+            origin=origin,
+            extent=extent,
+            dims=dims,
+            units=units,
+            gt4py_backend="gtx86"
+        )
+
+
 @pytest.mark.parametrize("backend", ["gt4py_numpy", "gt4py_cupy"], indirect=True)
 def test_storage_exists(quantity, backend):
     if "numpy" in backend:
