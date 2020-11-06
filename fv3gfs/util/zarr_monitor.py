@@ -154,7 +154,7 @@ class _ZarrVariableWriter:
 
     def append(self, quantity):
         # can't just use zarr_array.append because we only want to
-        # extend the dimension once, from the master rank
+        # extend the dimension once, from the root rank
         if self.array is None:
             self._init_zarr(quantity)
 
@@ -188,6 +188,15 @@ class _ZarrVariableWriter:
         except ValueError as err:
             if err.args[0] == "object __array__ method not producing an array":
                 self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
+        except TypeError as err:
+            if err.args[0].startswith(
+                "Implicit conversion to a NumPy array is not allowed."
+            ):
+                self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
 
         self.i_time += 1
 

@@ -44,7 +44,7 @@ def open_restart(
     rank = communicator.rank
     tile_index = communicator.partitioner.tile_index(rank)
     state = {}
-    if communicator.tile.rank == constants.MASTER_RANK:
+    if communicator.tile.rank == constants.ROOT_RANK:
         for file in restart_files(dirname, tile_index, label):
             state.update(
                 load_partial_state_from_restart_file(
@@ -77,7 +77,11 @@ def restart_filenames(dirname, tile_index, label):
     return_list = []
     for name in RESTART_NAMES + RESTART_OPTIONAL_NAMES:
         filename = os.path.join(dirname, prepend_label(name, label) + suffix)
-        if (name in RESTART_NAMES) or os.path.exists(filename):
+        if (
+            (name in RESTART_NAMES)
+            or filesystem.is_file(filename)
+            or os.path.exists(filename)
+        ):
             return_list.append(filename)
     return return_list
 
