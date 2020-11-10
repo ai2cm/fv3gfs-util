@@ -94,7 +94,7 @@ def tile_extent(dims, dim_lengths):
 
 
 @pytest.fixture
-def tile_quantity(dims, units, dim_lengths, tile_extent, n_tile_halo, numpy):
+def cube_quantity(dims, units, dim_lengths, tile_extent, n_tile_halo, numpy):
     return get_tile_quantity(dims, units, dim_lengths, tile_extent, n_tile_halo, numpy)
 
 

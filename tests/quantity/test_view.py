@@ -749,9 +749,33 @@ def test_many_slices_raises(quantity, view_name):
                 origin=(1, 1),
                 extent=(1, 1),
             ),
+            slice(None, None),
+            np.array([1])[0:0],  # need to make a non-empty array to get empty array
+            id="3_by_3_default",
+        ),
+        pytest.param(
+            fv3gfs.util.Quantity(
+                np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
+                dims=[fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM],
+                units="m",
+                origin=(1, 1),
+                extent=(1, 1),
+            ),
             (-1, -1),
             0,
             id="3_by_3_corner",
+        ),
+        pytest.param(
+            fv3gfs.util.Quantity(
+                np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]),
+                dims=[fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM],
+                units="m",
+                origin=(1, 1),
+                extent=(1, 1),
+            ),
+            (slice(-1, None), slice(-1, None)),
+            np.array([[0]]),
+            id="3_by_3_corner_as_slice_with_default_end",
         ),
         pytest.param(
             fv3gfs.util.Quantity(
