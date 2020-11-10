@@ -171,7 +171,7 @@ def test_boundary_data_2_by_2_array_2_halo():
             3,
             fv3gfs.util.WEST,
             slice(None, None),
-            slice(1, 4),
+            slice(1, 1),
             id="none_is_changed",
         ),
         pytest.param(
@@ -180,7 +180,7 @@ def test_boundary_data_2_by_2_array_2_halo():
             3,
             fv3gfs.util.WEST,
             slice(None, None),
-            slice(1, 4),
+            slice(1, 1),
             id="perpendicular_none_is_changed",
         ),
         pytest.param(

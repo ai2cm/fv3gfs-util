@@ -5,6 +5,11 @@ from ._exceptions import OutOfBoundsError
 
 
 def shift_boundary_slice_tuple(dims, origin, extent, boundary_type, slice_tuple):
+    """
+    Given the necessary information, shift a tuple of slices by the location
+    of the boundary, and set the default start and end indices for slices to that
+    boundary.
+    """
     slice_list = []
     for dim, entry, origin_1d, extent_1d in zip(dims, slice_tuple, origin, extent):
         slice_list.append(
@@ -22,18 +27,16 @@ def bound_default_slice(slice_in, start=None, stop=None):
 
 
 def _shift_boundary_slice(dim, origin, extent, boundary_type, slice_object):
-    """A special case of _get_boundary_slice where one edge must be an interior or
-    exterior halo point."""
     start_offset, stop_offset = _get_offset(boundary_type, dim, origin, extent)
     if isinstance(slice_object, slice):
         if slice_object.start is not None:
             start = slice_object.start + start_offset
         else:
-            start = slice_object.start
+            start = start_offset
         if slice_object.stop is not None:
             stop = slice_object.stop + stop_offset
         else:
-            stop = slice_object.stop
+            stop = stop_offset
         return bound_default_slice(
             slice(start, stop, slice_object.step), origin, origin + extent
         )
