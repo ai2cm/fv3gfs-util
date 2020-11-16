@@ -7,6 +7,8 @@ from .rotate import rotate_scalar_data, rotate_vector_data
 from .buffer import array_buffer, send_buffer, recv_buffer
 from ._timing import Timer
 import logging
+import os
+import pickle
 
 __all__ = [
     "TileCommunicator",
@@ -16,6 +18,49 @@ __all__ = [
 ]
 
 logger = logging.getLogger("fv3gfs.util")
+
+
+REGRESSION_DATA = None
+REGRESSION_INDEX = 0
+DO_REGRESSION = False
+
+
+class RegressionError(Exception):
+    """indicates output has changed since previous execution"""
+
+
+def start_regression(filename: str):
+    global DO_REGRESSION
+    global REGRESSION_DATA
+    global REGRESSION_INDEX
+    DO_REGRESSION = True
+
+    if os.path.isfile(filename):
+        with open(filename, 'rb') as f:
+            REGRESSION_DATA = pickle.load(f)
+    else:
+        REGRESSION_DATA = []
+
+
+def regress_arrays(*arrays):
+    if DO_REGRESSION:
+        current_hash = ""
+        for array in arrays:
+            current_hash = hash(current_hash + array.tostring())
+        global REGRESSION_INDEX
+        if len(REGRESSION_DATA) > REGRESSION_INDEX:
+            # check data
+            if current_hash != REGRESSION_DATA[REGRESSION_INDEX]:
+                raise RegressionError()
+        else:
+            # set data
+            REGRESSION_DATA.append(current_hash)
+
+
+def save_regression(filename):
+    if not os.path.isfile(filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(REGRESSION_DATA, f)
 
 
 def bcast_metadata_list(comm, quantity_list):
@@ -585,12 +630,14 @@ class CubedSphereCommunicator(Communicator):
     def _Isend(self, numpy, in_array, **kwargs):
         # don't want to use a buffer here, because we leave this scope and can't close
         # the context manager. might figure out a way to do it later
+        regress_arrays(in_array)
         with self.timer.clock("pack"):
             array = numpy.ascontiguousarray(in_array)
         with self.timer.clock("Isend"):
             return self.comm.Isend(array, **kwargs)
 
     def _Send(self, numpy, in_array, **kwargs):
+        regress_arrays(in_arrays)
         with send_buffer(numpy.empty, in_array, timer=self.timer) as sendbuf:
             self.comm.Send(sendbuf, **kwargs)
 
@@ -598,6 +645,7 @@ class CubedSphereCommunicator(Communicator):
         with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
             with self.timer.clock("Recv"):
                 self.comm.Recv(recvbuf, **kwargs)
+            regress_arrays(recvbuf)
 
     def _Irecv(self, numpy, out_array, **kwargs):
         # we can't perform a true Irecv because we need to receive the data into a
@@ -607,6 +655,7 @@ class CubedSphereCommunicator(Communicator):
             with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
                 with self.timer.clock("Recv"):
                     self.comm.Recv(recvbuf, **kwargs)
+                regress_arrays(recvbuf)
 
         return FunctionRequest(recv)
 
