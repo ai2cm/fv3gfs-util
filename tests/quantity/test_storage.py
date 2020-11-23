@@ -154,3 +154,33 @@ def test_numpy_data_becomes_cupy_with_gpu_backend(
     )
     assert isinstance(quantity.data, cupy.ndarray)
     assert isinstance(quantity.storage, gt4py.storage.storage.GPUStorage)
+
+@pytest.mark.parametrize("backend", ["gt4py_numpy"], indirect=True)
+def test_cannot_use_cpu_storage_with_gpu_backend(
+    data, origin, extent, dims, units, backend
+):
+    assert isinstance(data, gt4py.storage.storage.CPUStorage)
+    with pytest.raises(TypeError):
+        fv3gfs.util.Quantity(
+            data,
+            origin=origin,
+            extent=extent,
+            dims=dims,
+            units=units,
+            gt4py_backend="gtcuda",
+        )
+
+@pytest.mark.parametrize("backend", ["gt4py_cupy"], indirect=True)
+def test_cannot_use_gpu_storage_with_cpu_backend(
+    data, origin, extent, dims, units, backend
+):
+    assert isinstance(data, gt4py.storage.storage.GPUStorage)
+    with pytest.raises(TypeError):
+        fv3gfs.util.Quantity(
+            data,
+            origin=origin,
+            extent=extent,
+            dims=dims,
+            units=units,
+            gt4py_backend="numpy",
+        )
