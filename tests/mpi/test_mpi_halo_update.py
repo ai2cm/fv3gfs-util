@@ -241,11 +241,12 @@ def boundary_dict(ranks_per_tile):
 
 @pytest.fixture
 def depth_quantity(
-    dims, units, origin, extent, shape, numpy, dtype, n_points, n_buffer
+    dims, units, origin, extent, shape, numpy, dtype, n_points, n_buffer, backend
 ):
     """A quantity whose value indicates the distance from the computational
     domain boundary."""
-    data = numpy.zeros(shape, dtype=dtype) + numpy.nan
+    data = numpy.zeros(shape, dtype=dtype)
+    data[...] = numpy.nan
     for n_inside in range(max(n_points, max(extent) // 2), -1, -1):
         for i, dim in enumerate(dims):
             if (n_inside <= extent[i] // 2) and (dim in fv3gfs.util.HORIZONTAL_DIMS):
@@ -262,6 +263,7 @@ def depth_quantity(
                 data[tuple(pos)] = numpy.nan
                 pos[i] = origin[i] + extent[i] + n_outside - 1
                 data[tuple(pos)] = numpy.nan
+
     quantity = fv3gfs.util.Quantity(
         data, dims=dims, units=units, origin=origin, extent=extent,
     )
