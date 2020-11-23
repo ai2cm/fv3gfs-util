@@ -138,6 +138,7 @@ def test_accessing_storage_does_not_break_view(
     quantity.storage[origin] = -1.0
     assert quantity.data[origin] == quantity.view[tuple(0 for _ in origin)]
 
+
 # run using cupy backend even though unused, to mark this as a "gpu" test
 @pytest.mark.parametrize("backend", ["cupy"], indirect=True)
 def test_numpy_data_becomes_cupy_with_gpu_backend(
@@ -155,6 +156,7 @@ def test_numpy_data_becomes_cupy_with_gpu_backend(
     assert isinstance(quantity.data, cupy.ndarray)
     assert isinstance(quantity.storage, gt4py.storage.storage.GPUStorage)
 
+
 @pytest.mark.parametrize("backend", ["gt4py_numpy"], indirect=True)
 def test_cannot_use_cpu_storage_with_gpu_backend(
     data, origin, extent, dims, units, backend
@@ -169,6 +171,7 @@ def test_cannot_use_cpu_storage_with_gpu_backend(
             units=units,
             gt4py_backend="gtcuda",
         )
+
 
 @pytest.mark.parametrize("backend", ["gt4py_cupy"], indirect=True)
 def test_cannot_use_gpu_storage_with_cpu_backend(

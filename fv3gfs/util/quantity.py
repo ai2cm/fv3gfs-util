@@ -276,12 +276,12 @@ class Quantity:
             origin = (0,) * len(dims)  # default origin at origin of array
         else:
             origin = tuple(origin)
-        
+
         if extent is None:
             extent = tuple(length - start for length, start in zip(data.shape, origin))
         else:
             extent = tuple(extent)
-        
+
         if isinstance(data, (int, float, list)):
             data = np.asarray(data)
         elif gt4py is not None and isinstance(data, gt4py.storage.storage.Storage):
@@ -304,8 +304,8 @@ class Quantity:
                     f"got {type(data)}"
                 )
         elif gt4py_backend is not None:
-            self._storage, self._data = (
-                self._initialize_storage(data, origin, gt4py_backend)
+            self._storage, self._data = self._initialize_storage(
+                data, origin, gt4py_backend
             )
         else:
             self._data = data
@@ -389,7 +389,7 @@ class Quantity:
                 "gt4py backend was not specified when initializing this object"
             )
         return self._storage
-    
+
     def _initialize_storage(self, data, origin, gt4py_backend: str):
         print(origin)
         storage = gt4py.storage.storage.empty(
