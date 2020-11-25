@@ -269,7 +269,7 @@ class Quantity:
             extent: number of points along each axis within the computational domain
             gt4py_backend: backend to use for gt4py storages, if not given this will
                 be derived from a Storage if given as the data argument, otherwise the
-                storage attribute is disabled and will raise an exception. will raise
+                storage attribute is disabled and will raise an exception. Will raise
                 a TypeError if this is given with a gt4py storage type as data
         """
         if origin is None:
@@ -391,7 +391,6 @@ class Quantity:
         return self._storage
 
     def _initialize_storage(self, data, origin, gt4py_backend: str):
-        print(origin)
         storage = gt4py.storage.storage.empty(
             gt4py_backend,
             default_origin=origin,
