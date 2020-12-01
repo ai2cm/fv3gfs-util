@@ -330,8 +330,10 @@ class CubedSphereCommunicator(Communicator):
             quantity: the quantity to be updated
             n_points: how many halo points to update, starting from the interior
         """
+        # quantity.data.device.synchronize()
         req = self.start_halo_update(quantity, n_points)
         req.wait()
+        # quantity.data.device.synchronize()
 
     def start_halo_update(self, quantity: Quantity, n_points: int) -> HaloUpdateRequest:
         """Start an asynchronous halo update on a quantity.
@@ -587,17 +589,22 @@ class CubedSphereCommunicator(Communicator):
         # the context manager. might figure out a way to do it later
         with self.timer.clock("pack"):
             array = numpy.ascontiguousarray(in_array)
+        if hasattr(array, "device"):  # cupy array
+            array.device.synchronize()
         with self.timer.clock("Isend"):
-            return self.comm.Isend(array, **kwargs)
+            print(self.comm, array, array.shape, kwargs)
+            self.comm.barrier()
+            return self.comm.Isend(array.ravel(), **kwargs)
 
     def _Send(self, numpy, in_array, **kwargs):
+        if hasattr(in_array, "device"):  # cupy array
+            in_array.device.synchronize()
+            in_array = numpy.ascontiguousarray(in_array)
+            in_array.device.synchronize()
         with send_buffer(numpy.empty, in_array, timer=self.timer) as sendbuf:
-            self.comm.Send(sendbuf, **kwargs)
-
-    def _Recv(self, numpy, out_array, **kwargs):
-        with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
-            with self.timer.clock("Recv"):
-                self.comm.Recv(recvbuf, **kwargs)
+            if hasattr(sendbuf, "device"):  # cupy array
+                sendbuf.device.synchronize()
+            self.comm.Send(sendbuf.ravel(), **kwargs)
 
     def _Irecv(self, numpy, out_array, **kwargs):
         # we can't perform a true Irecv because we need to receive the data into a
@@ -606,7 +613,10 @@ class CubedSphereCommunicator(Communicator):
         def recv():
             with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
                 with self.timer.clock("Recv"):
-                    self.comm.Recv(recvbuf, **kwargs)
+                    self.comm.Recv(recvbuf.ravel(), **kwargs)
+                self.comm.barrier()
+                if hasattr(recvbuf, "device"):  # cupy array
+                    recvbuf.device.synchronize()
 
         return FunctionRequest(recv)
 

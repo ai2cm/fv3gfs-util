@@ -1,12 +1,12 @@
 from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
-from numpy import ndarray
+import numpy as np
 import contextlib
 from .utils import is_c_contiguous
 from .types import Allocator
 
 
-BUFFER_CACHE: Dict[Tuple[Callable, Iterable[int], type], ndarray] = {}
+BUFFER_CACHE: Dict[Tuple[Callable, Iterable[int], type], np.ndarray] = {}
 
 
 @contextlib.contextmanager
@@ -37,7 +37,7 @@ def array_buffer(allocator: Allocator, shape: Iterable[int], dtype: type):
 
 
 @contextlib.contextmanager
-def send_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = None):
+def send_buffer(allocator: Callable, array: np.ndarray, timer: Optional[Timer] = None):
     """A context manager ensuring that `array` is contiguous in a context where it is
     being sent as data, copying into a recycled buffer array if necessary.
 
@@ -57,7 +57,11 @@ def send_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
     else:
         timer.start("pack")
         with array_buffer(allocator, array.shape, array.dtype) as sendbuf:
+            if hasattr(array, "device"):
+                array.device.synchronize()
             sendbuf[:] = array
+            if hasattr(sendbuf, "device"):
+                sendbuf.device.synchronize()
             # this is a little dangerous, because if there is an exception in the two
             # lines above the timer may be started but never stopped. However, it
             # cannot be avoided because we cannot put those two lines in a with or
@@ -67,7 +71,7 @@ def send_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
 
 
 @contextlib.contextmanager
-def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = None):
+def recv_buffer(allocator: Callable, array: np.ndarray, timer: Optional[Timer] = None):
     """A context manager ensuring that array is contiguous in a context where it is
     being used to receive data, using a recycled buffer array and then copying the
     result into array if necessary.
@@ -90,5 +94,7 @@ def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
         with array_buffer(allocator, array.shape, array.dtype) as recvbuf:
             timer.stop("unpack")
             yield recvbuf
+            if hasattr(recvbuf, "device"):
+                recvbuf.device.synchronize()
             with timer.clock("unpack"):
                 array[:] = recvbuf

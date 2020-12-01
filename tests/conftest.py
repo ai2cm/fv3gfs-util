@@ -12,7 +12,7 @@ except ModuleNotFoundError:
     cupy = None
 
 
-@pytest.fixture(params=["numpy", "cupy", "gt4py_numpy", "gt4py_cupy"])
+@pytest.fixture(params=["numpy", "gt4py_numpy", "gt4py_cupy"])
 def backend(request):
     if cupy is None and request.param.endswith("cupy"):
         if request.config.getoption("--gpu-only"):

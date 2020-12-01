@@ -40,7 +40,7 @@ test: ## run tests quickly with the default Python
 	pytest $(PYTEST_ARGS) tests
 
 test_mpi:
-	mpirun -n 6 --allow-run-as-root --mca btl_vader_single_copy_mechanism none --oversubscribe pytest $(PYTEST_ARGS) tests/mpi
+	mpirun -n 6 --allow-run-as-root --mca btl_vader_single_copy_mechanism none --oversubscribe pytest $(PYTEST_ARGS) tests/mpi/test_mpi_halo_update.py
 	$(MAKE) -C examples/mpi
 
 lint:

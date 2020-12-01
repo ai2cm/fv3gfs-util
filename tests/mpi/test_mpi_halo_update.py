@@ -22,7 +22,7 @@ def layout():
 
 @pytest.fixture
 def nx_rank(n_points):
-    return max(48, n_points * 2 - 1)
+    return max(4, n_points * 2 - 1)
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def nx(nx_rank, layout):
     return nx_rank * layout[1]
 
 
-@pytest.fixture(params=[1, 3])
+@pytest.fixture(params=[3])#params=[1, 3])
 def n_points(request):
     return request.param
 
@@ -63,18 +63,18 @@ def n_points_update(request, n_points):
 
 @pytest.fixture(
     params=[
-        pytest.param((fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM), id="center"),
-        pytest.param(
-            (fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM), id="center_3d"
-        ),
-        pytest.param(
-            (fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM),
-            id="center_3d_reverse",
-        ),
-        pytest.param(
-            (fv3gfs.util.X_DIM, fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM),
-            id="center_3d_shuffle",
-        ),
+        # pytest.param((fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM), id="center"),
+        # pytest.param(
+        #     (fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM), id="center_3d"
+        # ),
+        # pytest.param(
+        #     (fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM),
+        #     id="center_3d_reverse",
+        # ),
+        # pytest.param(
+        #     (fv3gfs.util.X_DIM, fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM),
+        #     id="center_3d_shuffle",
+        # ),
         pytest.param(
             (fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM), id="interface"
         ),
@@ -245,9 +245,10 @@ def depth_quantity(
 ):
     """A quantity whose value indicates the distance from the computational
     domain boundary."""
-    data = numpy.zeros(shape, dtype=dtype)
+    data = numpy.zeros(shape, dtype=dtype) 
     data[...] = numpy.nan
     for n_inside in range(max(n_points, max(extent) // 2), -1, -1):
+        # n_inside += MPI.COMM_WORLD.Get_rank()
         for i, dim in enumerate(dims):
             if (n_inside <= extent[i] // 2) and (dim in fv3gfs.util.HORIZONTAL_DIMS):
                 pos = [slice(None, None)] * len(dims)
@@ -256,6 +257,7 @@ def depth_quantity(
                 pos[i] = origin[i] + extent[i] - 1 - n_inside
                 data[tuple(pos)] = n_inside
     for n_outside in range(1, n_points + 1 + n_buffer):
+        # n_outside += MPI.COMM_WORLD.Get_rank()
         for i, dim in enumerate(dims):
             if dim in fv3gfs.util.HORIZONTAL_DIMS:
                 pos = [slice(None, None)] * len(dims)
@@ -292,9 +294,10 @@ def test_depth_halo_update(
     quantity = depth_quantity
     if 0 < n_points_update <= n_points:
         communicator.halo_update(quantity, n_points_update)
+        print(f"{communicator.rank}\n{quantity.data}")
         for dim, extent in ((y_dim, y_extent), (x_dim, x_extent)):
             assert numpy.all(quantity.sel(**{dim: -1}) <= 1)
-            assert numpy.all(quantity.sel(**{dim: extent}) <= 1)
+            assert numpy.all(quantity.sel(**{dim: extent}) <= 1), (quantity, dim, extent)
             if n_points_update >= 2:
                 assert numpy.all(quantity.sel(**{dim: -2}) <= 2)
                 assert numpy.all(quantity.sel(**{dim: extent + 1}) <= 2)

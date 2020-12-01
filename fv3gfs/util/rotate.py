@@ -31,6 +31,9 @@ def rotate_scalar_data(data, dims, numpy, n_clockwise_rotations):
             else:
                 slice_list.append(slice(None, None))
         data = data[tuple(slice_list)]
+    if hasattr(data, "device"):
+        data = numpy.ascontiguousarray(data)
+        data.device.synchronize()
     return data
 
 
