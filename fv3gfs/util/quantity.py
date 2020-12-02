@@ -77,11 +77,17 @@ class BoundaryArrayView:
         self._data[self._get_array_index(index)] = value
 
     def _get_array_index(self, index):
+        if isinstance(index, list):
+            index = tuple(index)
+        if not isinstance(index, tuple):
+            index = (index,)
         if len(index) > len(self._dims):
             raise IndexError(
                 f"{len(index)} is too many indices for a "
                 f"{len(self._dims)}-dimensional quantity"
             )
+        if len(index) < len(self._dims):
+            index = index + (slice(None, None),) * (len(self._dims) - len(index))
         return shift_boundary_slice_tuple(
             self._dims, self._origin, self._extent, self._boundary_type, index
         )
@@ -122,11 +128,13 @@ class BoundedArrayView:
     array, while view.interior[-1:1, -1:1, :] would also include one halo point.
     """
 
-    def __init__(self, array, dims, origin, extent):
+    def __init__(
+        self, array, dims: Sequence[str], origin: Sequence[int], extent: Sequence[int]
+    ):
         self._data = array
-        self._dims = dims
-        self._origin = origin
-        self._extent = extent
+        self._dims = tuple(dims)
+        self._origin = tuple(origin)
+        self._extent = tuple(extent)
         self._northwest = BoundaryArrayView(
             array, constants.NORTHWEST, dims, origin, extent
         )
@@ -144,12 +152,12 @@ class BoundedArrayView:
         )
 
     @property
-    def origin(self):
+    def origin(self) -> Tuple[int, ...]:
         """the start of the computational domain"""
         return self._origin
 
     @property
-    def extent(self):
+    def extent(self) -> Tuple[int, ...]:
         """the shape of the computational domain"""
         return self._extent
 
@@ -383,14 +391,19 @@ class Quantity:
                 mask=None,
             )
             self._storage[...] = self._data
-            # storage must initialize new memory. when GDP-2 is merged, we can instead
+            # storage must initialize new memory. when GDP-3 is merged, we can instead
             # initialize storage from self._data
-            # when GDP-2 is merged, we can instead use the data in self._data to
+            # when GDP-3 is merged, we can instead use the data in self._data to
             # initialize the storage, instead of making a copy.
             if isinstance(self._data, np.ndarray):
                 self._data = self.np.asarray(self._storage.data)
             elif isinstance(self._data, cupy.ndarray):
                 self._data = self._storage.gpu_view
+            # must re-initialize compute domain view with new array
+            # this also can be removed when we merge GDP-3
+            self._compute_domain_view = BoundedArrayView(
+                self.data, self.dims, self.origin, self.extent
+            )
         return self._storage
 
     @property
