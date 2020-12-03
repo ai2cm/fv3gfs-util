@@ -115,7 +115,6 @@ class Communicator:
                         global_extent=metadata.extent,
                         overlap=True,
                     )
-                    print(subtile_slice, sendbuf.shape)
                     sendbuf[rank, :] = send_quantity.view[subtile_slice]
                 self._Scatter(
                     metadata.np,
@@ -193,9 +192,6 @@ class Communicator:
                         global_extent=recv_quantity.extent,
                         overlap=True,
                     )
-                    print(rank, to_slice, recvbuf.shape)
-                    print(recv_quantity.origin, recv_quantity.extent)
-                    print(recv_quantity.view[:])
                     recv_quantity.view[to_slice] = recvbuf[rank, :]
                 result = recv_quantity
         else:
