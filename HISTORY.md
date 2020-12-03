@@ -23,6 +23,10 @@ in the `coupler_nml` namelist.
 - Moved scatter and gather from TileCommunicator to the Communicator base class, so its code can be re-used by the CubedSphereCommunicator
 - implemented subtile_slice, global_extent, and subtile_extent routines on CubedSpherePartitioner necessary for scatter/gather in CubedSphereCommunicator.
 - renamed argument `tile_extent` and `tile_dims` to `global_extent` and `global_dims` in routines to refer generically to the tile in the case of tile scatter/gather or cube in the case of cube scatter/gather
+- Fixed a bug where initializing a Quantity with a numpy array and a gpu backend would give CPUStorage
+- raise TypeError if initializing a quantity with both a storage and a gt4py_backend argument
+- eagerly create storage object when initializing Quantity
+- make data type of quantity and storage reflect the gt4py_backend chosen, instead of being determined based on the data type being numpy/cupy
 
 Fixes:
 - Fixed a bug where quantity.storage and quantity.data could be out of sync if the quantity was initialized using data and a gt4py backend string

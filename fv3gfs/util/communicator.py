@@ -130,7 +130,8 @@ class Communicator:
 
     def _get_gather_recv_quantity(
         self, global_extent: Sequence[int], send_metadata: QuantityMetadata
-    ):
+    ) -> Quantity:
+        """Initialize a Quantity for use when receiving global data during gather"""
         recv_quantity = Quantity(
             send_metadata.np.empty(global_extent, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
@@ -143,7 +144,8 @@ class Communicator:
 
     def _get_scatter_recv_quantity(
         self, shape: Sequence[int], send_metadata: QuantityMetadata
-    ):
+    ) -> Quantity:
+        """Initialize a Quantity for use when receiving subtile data during scatter"""
         recv_quantity = Quantity(
             send_metadata.np.empty(shape, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
@@ -347,6 +349,7 @@ class CubedSphereCommunicator(Communicator):
     def _get_gather_recv_quantity(
         self, global_extent: Sequence[int], send_metadata: QuantityMetadata
     ):
+        """Initialize a Quantity for use when receiving global data during gather"""
         # needs to change the quantity dimensions since we add a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
@@ -362,6 +365,7 @@ class CubedSphereCommunicator(Communicator):
     def _get_scatter_recv_quantity(
         self, shape: Sequence[int], send_metadata: QuantityMetadata
     ):
+        """Initialize a Quantity for use when receiving subtile data during scatter"""
         # needs to change the quantity dimensions since we remove a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
