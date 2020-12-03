@@ -50,7 +50,6 @@ def get_tile_number(tile_rank: int, total_ranks: int) -> int:
 
 
 class Partitioner(abc.ABC):
-    
     @abc.abstractmethod
     def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full tile representation for the given dimensions.
