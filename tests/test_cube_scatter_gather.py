@@ -155,7 +155,6 @@ def test_gathered_quantity_has_storage(
     ):
         result = communicator.gather(send_quantity=rank_quantity)
         if communicator.rank == 0:
-            print(result.gt4py_backend, result.metadata)
             assert isinstance(result.storage, gt4py.storage.storage.Storage)
         else:
             assert result is None
