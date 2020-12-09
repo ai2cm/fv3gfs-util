@@ -50,6 +50,7 @@ def get_tile_number(tile_rank: int, total_ranks: int) -> int:
 
 
 class Partitioner(abc.ABC):
+
     @abc.abstractmethod
     def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full tile representation for the given dimensions.
@@ -101,6 +102,7 @@ class Partitioner(abc.ABC):
 
 
 class TilePartitioner(Partitioner):
+
     def __init__(
         self, layout: Tuple[int, int],
     ):
@@ -553,13 +555,13 @@ class CubedSpherePartitioner(Partitioner):
         )
 
     def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
-        """Return the shape of a full tile representation for the given dimensions.
+        """Return the shape of a full cube representation for the given dimensions.
 
         Args:
             metadata: quantity metadata
 
         Returns:
-            extent: shape of full tile representation
+            extent: shape of full cube representation
         """
         return (6,) + tile_extent_from_rank_metadata(
             rank_metadata.dims, rank_metadata.extent, self.layout

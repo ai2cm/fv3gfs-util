@@ -58,6 +58,14 @@ def time():
     return datetime.datetime(2000, 1, 1)
 
 
+def assert_quantity_equals(result, reference):
+    assert result.dims == reference.dims
+    assert result.units == reference.units
+    assert result.extent == reference.extent
+    assert isinstance(result.data, type(cube_quantity.data))
+    reference.np.testing.assert_array_equal(result.view[:], reference.view[:])
+
+
 @pytest.fixture()
 def dim_lengths(layout):
     return {
@@ -190,11 +198,7 @@ def test_cube_gather_state(
             assert out is None
     assert result_state["time"] == time
     result = result_state["air_temperature"]
-    assert result.dims == cube_quantity.dims
-    assert result.units == cube_quantity.units
-    assert result.extent == cube_quantity.extent
-    assert isinstance(result.data, type(cube_quantity.data))
-    cube_quantity.np.testing.assert_array_equal(result.view[:], cube_quantity.view[:])
+    assert_quantity_equals(result, cube_quantity)
 
 
 def test_cube_gather_state_with_recv_state(
@@ -212,10 +216,7 @@ def test_cube_gather_state_with_recv_state(
             communicator.gather_state(send_state=state)
     assert recv_state["time"] == time
     result = recv_state["air_temperature"]
-    assert result.dims == cube_quantity.dims
-    assert result.units == cube_quantity.units
-    assert result.extent == cube_quantity.extent
-    cube_quantity.np.testing.assert_array_equal(result.view[:], cube_quantity.view[:])
+    assert_quantity_equals(result, cube_quantity)
 
 
 def test_cube_gather_no_recv_quantity(
@@ -227,10 +228,7 @@ def test_cube_gather_no_recv_quantity(
         result = communicator.gather(send_quantity=rank_quantity)
         if communicator.rank != 0:
             assert result is None
-    assert result.dims == cube_quantity.dims
-    assert result.units == cube_quantity.units
-    assert result.extent == cube_quantity.extent
-    cube_quantity.np.testing.assert_array_equal(result.view[:], cube_quantity.view[:])
+    assert_quantity_equals(result, cube_quantity)
 
 
 def test_cube_scatter_no_recv_quantity(
@@ -243,10 +241,7 @@ def test_cube_scatter_no_recv_quantity(
         else:
             result_list.append(communicator.scatter())
     for rank, (result, scattered) in enumerate(zip(result_list, scattered_quantities)):
-        assert result.dims == scattered.dims
-        assert result.units == scattered.units
-        assert result.extent == scattered.extent
-        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+        assert_quantity_equals(result, scattered)
 
 
 def test_cube_scatter_with_recv_quantity(
@@ -266,10 +261,7 @@ def test_cube_scatter_with_recv_quantity(
     for rank, (result, scattered) in enumerate(
         zip(recv_quantities, scattered_quantities)
     ):
-        assert result.dims == scattered.dims
-        assert result.units == scattered.units
-        assert result.extent == scattered.extent
-        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+        assert_quantity_equals(result, scattered)
 
 
 def test_cube_gather_with_recv_quantity(
@@ -287,12 +279,7 @@ def test_cube_gather_with_recv_quantity(
         else:
             result = communicator.gather(send_quantity=rank_quantity)
             assert result is None
-    assert recv_quantity.dims == cube_quantity.dims
-    assert recv_quantity.units == cube_quantity.units
-    assert recv_quantity.extent == cube_quantity.extent
-    cube_quantity.np.testing.assert_array_equal(
-        recv_quantity.view[:], cube_quantity.view[:]
-    )
+    assert_quantity_equals(recv_quantity, cube_quantity)
 
 
 def test_cube_scatter_state(
@@ -308,10 +295,7 @@ def test_cube_scatter_state(
     for result_state, scattered in zip(result_list, scattered_quantities):
         assert result_state["time"] == time
         result = result_state["air_temperature"]
-        assert result.dims == scattered.dims
-        assert result.units == scattered.units
-        assert result.extent == scattered.extent
-        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+        assert_quantity_equals(result, scattered)
 
 
 def test_cube_scatter_state_with_recv_state(
@@ -335,7 +319,4 @@ def test_cube_scatter_state_with_recv_state(
     for rank, (result, scattered) in enumerate(
         zip(recv_quantities, scattered_quantities)
     ):
-        assert result.dims == scattered.dims
-        assert result.units == scattered.units
-        assert result.extent == scattered.extent
-        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+        assert_quantity_equals(result, scattered)
