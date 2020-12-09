@@ -62,7 +62,7 @@ def assert_quantity_equals(result, reference):
     assert result.dims == reference.dims
     assert result.units == reference.units
     assert result.extent == reference.extent
-    assert isinstance(result.data, type(cube_quantity.data))
+    assert isinstance(result.data, type(reference.data))
     reference.np.testing.assert_array_equal(result.view[:], reference.view[:])
 
 
