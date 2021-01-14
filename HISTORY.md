@@ -5,6 +5,7 @@ latest
 ------
 
 Major changes:
+- If `only_names` is provided to `open_restart`, it will return those fields and nothing more.  Previously it would include `"time"` in the returned state even if it was not requested.
 - Use `cftime.datetime` objects to represent datetimes instead
 of `datetime.datetime` objects.  This results in times stored in a format compatible with
 the fortran model, and accurate internal representation of times with the calendar specified
