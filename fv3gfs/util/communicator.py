@@ -6,6 +6,7 @@ from .boundary import Boundary
 from .rotate import rotate_scalar_data, rotate_vector_data
 from .buffer import array_buffer, send_buffer, recv_buffer
 from ._timing import Timer
+import numpy as np
 import logging
 
 __all__ = [
@@ -66,14 +67,14 @@ class Communicator:
         return self.comm.Get_rank()
 
     def _Scatter(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf) as send, recv_buffer(
-            numpy.empty, recvbuf
+        with send_buffer(np.empty, sendbuf) as send, recv_buffer(
+            np.empty, recvbuf
         ) as recv:
             self.comm.Scatter(send, recv, **kwargs)
 
     def _Gather(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf) as send, recv_buffer(
-            numpy.empty, recvbuf
+        with send_buffer(np.empty, sendbuf) as send, recv_buffer(
+            np.empty, recvbuf
         ) as recv:
             self.comm.Gather(send, recv, **kwargs)
 
@@ -639,16 +640,16 @@ class CubedSphereCommunicator(Communicator):
         # don't want to use a buffer here, because we leave this scope and can't close
         # the context manager. might figure out a way to do it later
         with self.timer.clock("pack"):
-            array = numpy.ascontiguousarray(in_array)
+            array = np.ascontiguousarray(in_array)
         with self.timer.clock("Isend"):
             return self.comm.Isend(array, **kwargs)
 
     def _Send(self, numpy, in_array, **kwargs):
-        with send_buffer(numpy.empty, in_array, timer=self.timer) as sendbuf:
+        with send_buffer(np.empty, in_array, timer=self.timer) as sendbuf:
             self.comm.Send(sendbuf, **kwargs)
 
     def _Recv(self, numpy, out_array, **kwargs):
-        with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
+        with recv_buffer(np.empty, out_array, timer=self.timer) as recvbuf:
             with self.timer.clock("Recv"):
                 self.comm.Recv(recvbuf, **kwargs)
 
@@ -657,7 +658,7 @@ class CubedSphereCommunicator(Communicator):
         # buffer and then copy that buffer into the output array. Instead we will
         # just do a Recv() when wait is called.
         def recv():
-            with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
+            with recv_buffer(np.empty, out_array, timer=self.timer) as recvbuf:
                 with self.timer.clock("Recv"):
                     self.comm.Recv(recvbuf, **kwargs)
 
