@@ -1,5 +1,6 @@
 from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
+from cupy import asarray
 from numpy import ndarray
 import contextlib
 from .utils import is_c_contiguous
@@ -91,4 +92,4 @@ def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
             timer.stop("unpack")
             yield recvbuf
             with timer.clock("unpack"):
-                array[:] = recvbuf
+                array[:] = asarray(recvbuf)
