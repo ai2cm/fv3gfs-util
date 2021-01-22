@@ -2,6 +2,7 @@ from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
 from numpy import ndarray
 import contextlib
+
 try:
     import cupy as cp
 except ModuleNotFoundError:
