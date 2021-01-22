@@ -101,5 +101,7 @@ def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
                 # errors on the cupy arrays from gt4py storages.
                 # This should be fixed in a later version of gt4py
                 array[:] = (
-                    cp.asarray(recvbuf) if isinstance(array, cp.ndarray) else recvbuf
+                    cp.asarray(recvbuf)
+                    if cp and isinstance(array, cp.ndarray)
+                    else recvbuf
                 )
