@@ -2,7 +2,10 @@ from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
 from numpy import ndarray
 import contextlib
-import cupy as cp
+try:
+    import cupy as cp
+except ModuleNotFoundError:
+    cp = None
 from .utils import is_c_contiguous
 from .types import Allocator
 
@@ -92,4 +95,10 @@ def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
             timer.stop("unpack")
             yield recvbuf
             with timer.clock("unpack"):
-                array[:] = cp.asarray(recvbuf) if isinstance(array, cp.ndarray) else recvbuf
+                # The cp.asarray call is required to explicitly copy the data
+                # in the case of numpy arrays or to prevent memory ownership
+                # errors on the cupy arrays from gt4py storages.
+                # This should be fixed in a later version of gt4py
+                array[:] = (
+                    cp.asarray(recvbuf) if isinstance(array, cp.ndarray) else recvbuf
+                )
