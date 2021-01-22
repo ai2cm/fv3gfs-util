@@ -8,7 +8,6 @@ from .buffer import array_buffer, send_buffer, recv_buffer
 from ._timing import Timer
 import numpy as np
 import logging
-# import sys
 
 __all__ = [
     "TileCommunicator",
@@ -643,7 +642,6 @@ class CubedSphereCommunicator(Communicator):
         with self.timer.clock("pack"):
             array = np.ascontiguousarray(numpy.asnumpy(in_array))
         with self.timer.clock("Isend"):
-            # sys.stderr.write(f"_Isend({self.rank}): type(array)={type(array)}, array.shape={array.shape}\n")
             return self.comm.Isend(array, **kwargs)
 
     def _Send(self, numpy, in_array, **kwargs):
@@ -662,7 +660,6 @@ class CubedSphereCommunicator(Communicator):
         def recv():
             with recv_buffer(np.empty, out_array, timer=self.timer) as recvbuf:
                 with self.timer.clock("Recv"):
-                    # sys.stderr.write(f"_Irecv({self.rank}): type(recvbuf)={type(recvbuf)}, recvbuf.shape={recvbuf.shape}\n")
                     self.comm.Recv(recvbuf, **kwargs)
 
         return FunctionRequest(recv)
