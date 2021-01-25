@@ -312,6 +312,24 @@ def test_tile_scatter_state(
         scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
 
 
+def test_tile_scatter_state_without_time(
+    tile_quantity, scattered_quantities, communicator_list
+):
+    state = {"air_temperature": tile_quantity}
+    result_list = []
+    for communicator in communicator_list:
+        if communicator.rank == 0:
+            result_list.append(communicator.scatter_state(send_state=state))
+        else:
+            result_list.append(communicator.scatter_state())
+    for result_state, scattered in zip(result_list, scattered_quantities):
+        result = result_state["air_temperature"]
+        assert result.dims == scattered.dims
+        assert result.units == scattered.units
+        assert result.extent == scattered.extent
+        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+
+
 def test_tile_scatter_state_with_recv_state(
     tile_quantity, scattered_quantities, communicator_list, time
 ):
