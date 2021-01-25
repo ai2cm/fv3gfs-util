@@ -323,6 +323,7 @@ def test_tile_scatter_state_without_time(
         else:
             result_list.append(communicator.scatter_state())
     for result_state, scattered in zip(result_list, scattered_quantities):
+        assert "time" not in result_state
         result = result_state["air_temperature"]
         assert result.dims == scattered.dims
         assert result.units == scattered.units
@@ -373,6 +374,7 @@ def test_tile_scatter_state_with_recv_state_without_time(
         else:
             result = communicator.scatter_state(recv_state=state)
         assert result["air_temperature"] is recv
+        assert "time" not in result
     for rank, (result, scattered) in enumerate(
         zip(recv_quantities, scattered_quantities)
     ):
