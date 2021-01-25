@@ -355,3 +355,28 @@ def test_tile_scatter_state_with_recv_state(
         assert result.units == scattered.units
         assert result.extent == scattered.extent
         scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
+
+
+def test_tile_scatter_state_with_recv_state_without_time(
+    tile_quantity, scattered_quantities, communicator_list
+):
+    tile_state = {"air_temperature": tile_quantity}
+    recv_quantities = copy.deepcopy(scattered_quantities)
+    for q in recv_quantities:
+        q.data[:] = 0.0
+    for recv, communicator in zip(recv_quantities, communicator_list):
+        state = {
+            "air_temperature": recv,
+        }
+        if communicator.rank == 0:
+            result = communicator.scatter_state(send_state=tile_state, recv_state=state)
+        else:
+            result = communicator.scatter_state(recv_state=state)
+        assert result["air_temperature"] is recv
+    for rank, (result, scattered) in enumerate(
+        zip(recv_quantities, scattered_quantities)
+    ):
+        assert result.dims == scattered.dims
+        assert result.units == scattered.units
+        assert result.extent == scattered.extent
+        scattered.np.testing.assert_array_equal(result.view[:], scattered.view[:])
