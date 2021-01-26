@@ -72,7 +72,7 @@ class Timer:
         return self._accumulated_time.copy()
 
     @property
-    def hitcounts(self) -> Mapping[str, int]:
+    def hits(self) -> Mapping[str, int]:
         """accumulated hit counts for each operation name"""
         if len(self._clock_starts) > 0:
             warnings.warn(
