@@ -23,6 +23,7 @@ jobs:
           command: |
             sudo apt-get update
             sudo apt-get install libopenmpi3
+            sudo pip3 install tox
 
       # Download and cache dependencies
       # - restore_cache:
