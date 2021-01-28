@@ -11,7 +11,6 @@ requirements = [
     "zarr>=2.3.2",
     "typing_extensions>=3.7.4",
     "scipy>=1.6.0",
-    "mpi4py>=3.0.3",
 ]
 if sys.version_info.major == 3 and sys.version_info.minor == 6:
     requirements.append("dataclasses")
