@@ -48,8 +48,8 @@ subtile_index_list = []
 for layout in ((1, 1), (1, 2), (2, 2), (2, 3)):
     rank = 0
     for tile in range(6):
-        for y_subtile in range(layout[0]):
-            for x_subtile in range(layout[1]):
+        for x_subtile in range(layout[0]):
+            for y_subtile in range(layout[1]):
                 rank_list.append(rank)
                 layout_list.append(layout)
                 subtile_index_list.append((y_subtile, x_subtile))

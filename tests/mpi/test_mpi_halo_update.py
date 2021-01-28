@@ -37,12 +37,12 @@ def nz():
 
 @pytest.fixture
 def ny(ny_rank, layout):
-    return ny_rank * layout[0]
+    return ny_rank * layout[1]
 
 
 @pytest.fixture
 def nx(nx_rank, layout):
-    return nx_rank * layout[1]
+    return nx_rank * layout[0]
 
 
 @pytest.fixture(params=[1, 3])

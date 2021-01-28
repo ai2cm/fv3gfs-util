@@ -24,12 +24,12 @@ def nz(request, fast):
 
 @pytest.fixture
 def nx(nx_tile, layout):
-    return nx_tile / layout[1]
+    return nx_tile / layout[0]
 
 
 @pytest.fixture
 def ny(ny_tile, layout):
-    return ny_tile / layout[0]
+    return ny_tile / layout[1]
 
 
 @pytest.fixture(params=[(1, 1), (3, 3)])

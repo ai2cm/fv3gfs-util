@@ -61,10 +61,10 @@ def time():
 @pytest.fixture()
 def dim_lengths(layout):
     return {
-        fv3gfs.util.X_DIM: 2 * layout[1],
-        fv3gfs.util.X_INTERFACE_DIM: 2 * layout[1] + 1,
-        fv3gfs.util.Y_DIM: 2 * layout[0],
-        fv3gfs.util.Y_INTERFACE_DIM: 2 * layout[0] + 1,
+        fv3gfs.util.X_DIM: 2 * layout[0],
+        fv3gfs.util.X_INTERFACE_DIM: 2 * layout[0] + 1,
+        fv3gfs.util.Y_DIM: 2 * layout[1],
+        fv3gfs.util.Y_INTERFACE_DIM: 2 * layout[1] + 1,
         fv3gfs.util.Z_DIM: 3,
         fv3gfs.util.Z_INTERFACE_DIM: 4,
     }
