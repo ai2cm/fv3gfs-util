@@ -24,24 +24,6 @@ jobs:
             sudo apt-get update
             sudo apt-get install libopenmpi3
             sudo pip3 install tox
-
-      # Download and cache dependencies
-      # - restore_cache:
-      #     keys:
-      #       - v1-dependencies-{{ checksum "requirements.txt" }}
-      #       # fallback to using the latest cache if no exact match is found
-      #       - v1-dependencies-
-      # - run:
-      #     name: install dependencies
-      #     command: |
-      #       python3 -m venv venv
-      #       . venv/bin/activate
-      #       pip3 install -r requirements.txt
-      #       pip3 install mpi4py==3.0.3
-      # - save_cache:
-      #     paths:
-      #       - ./.tox
-      #     key: v1-dependencies-{{ checksum "requirements.txt" }}
       - run:
           name: run tests
           command: |
