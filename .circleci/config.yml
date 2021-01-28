@@ -24,10 +24,22 @@ jobs:
             sudo apt-get update
             sudo apt-get install libopenmpi3
             sudo pip3 install tox
+
+      # Download and cache dependencies
+      - run: cat tox.ini setup.py > checksum-me
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "checksum-me" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
       - run:
           name: run tests
           command: |
             tox
+      - save_cache:
+          paths:
+            - ./.tox
+          key: v1-dependencies-{{ checksum "checksum-me" }}
 
 workflows:
   version: 2
