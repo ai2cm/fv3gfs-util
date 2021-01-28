@@ -7,9 +7,11 @@ import time
 def timer():
     return Timer()
 
+
 @pytest.fixture
 def null_timer():
     return NullTimer()
+
 
 def test_start_stop(timer):
     timer.start("label")

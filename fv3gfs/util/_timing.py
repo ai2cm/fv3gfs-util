@@ -116,7 +116,7 @@ class NullTimer(Timer):
     def __init__(self):
         super().__init__()
         self._enabled = False
-    
+
     def enable(self):
         """Enable the Timer."""
         raise NotImplementedError(
