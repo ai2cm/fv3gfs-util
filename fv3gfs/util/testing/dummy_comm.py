@@ -20,6 +20,7 @@ class AsyncResult:
     def wait(self):
         return self._result()
 
+
 class DummyComm:
     def __init__(self, rank, total_ranks, buffer_dict):
         self.rank = rank
