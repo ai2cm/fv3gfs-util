@@ -58,15 +58,15 @@ def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
 
 
 def assign_array(
-    left_array: Union[np.ndarray, Storage], right_array: Union[np.ndarray, Storage],
+    to_array: Union[np.ndarray, Storage], from_array: Union[np.ndarray, Storage],
 ):
     # The cp.asarray call is required to explicitly copy the data
     # in the case of numpy arrays or to prevent memory ownership
     # errors on the cupy arrays from gt4py storages.
     # This should be fixed in a later version of gt4py
-    if cp and isinstance(left_array, cp.ndarray):
-        left_array[:] = cp.asarray(right_array)
-    elif cp and isinstance(right_array, cp.ndarray):
-        left_array[:] = cp.asnumpy(right_array)
+    if cp and isinstance(to_array, cp.ndarray):
+        to_array[:] = cp.asarray(from_array)
+    elif cp and isinstance(from_array, cp.ndarray):
+        to_array[:] = cp.asnumpy(from_array)
     else:
-        left_array[:] = right_array
+        to_array[:] = from_array
