@@ -3,11 +3,7 @@ from ._timing import Timer, NullTimer
 from numpy import ndarray
 import contextlib
 
-try:
-    import cupy as cp
-except ModuleNotFoundError:
-    cp = None
-from .utils import is_c_contiguous
+from .utils import assign_array, is_c_contiguous
 from .types import Allocator
 
 
@@ -62,7 +58,7 @@ def send_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
     else:
         timer.start("pack")
         with array_buffer(allocator, array.shape, array.dtype) as sendbuf:
-            sendbuf[:] = array
+            assign_array(sendbuf, array)
             # this is a little dangerous, because if there is an exception in the two
             # lines above the timer may be started but never stopped. However, it
             # cannot be avoided because we cannot put those two lines in a with or
@@ -96,12 +92,4 @@ def recv_buffer(allocator: Callable, array: ndarray, timer: Optional[Timer] = No
             timer.stop("unpack")
             yield recvbuf
             with timer.clock("unpack"):
-                # The cp.asarray call is required to explicitly copy the data
-                # in the case of numpy arrays or to prevent memory ownership
-                # errors on the cupy arrays from gt4py storages.
-                # This should be fixed in a later version of gt4py
-                array[:] = (
-                    cp.asarray(recvbuf)
-                    if cp and isinstance(array, cp.ndarray)
-                    else recvbuf
-                )
+                assign_array(array, recvbuf)

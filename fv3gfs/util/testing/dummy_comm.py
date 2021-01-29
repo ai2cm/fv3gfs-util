@@ -1,6 +1,6 @@
 import logging
 import copy
-from ..utils import ensure_contiguous
+from ..utils import assign_array, ensure_contiguous
 
 
 logger = logging.getLogger("fv3gfs.util")
@@ -19,7 +19,6 @@ class AsyncResult:
 
     def wait(self):
         return self._result()
-
 
 class DummyComm:
     def __init__(self, rank, total_ranks, buffer_dict):
@@ -109,7 +108,7 @@ class DummyComm:
             sendbuf = self._get_buffer("scatter", copy.deepcopy(sendbuf))
         else:
             sendbuf = self._get_buffer("scatter", None)
-        recvbuf[:] = sendbuf[self.rank]
+        assign_array(recvbuf, sendbuf[self.rank])
 
     def Gather(self, sendbuf, recvbuf, root=0, **kwargs):
         ensure_contiguous(sendbuf)
@@ -126,7 +125,7 @@ class DummyComm:
                     f"gather called on root rank before ranks {uncalled_ranks}"
                 )
             for i, sendbuf in enumerate(gather_buffer):
-                recvbuf[i, :] = sendbuf
+                assign_array(recvbuf[i, :], sendbuf)
 
     def Send(self, sendbuf, dest, **kwargs):
         ensure_contiguous(sendbuf)
@@ -142,7 +141,7 @@ class DummyComm:
 
     def Recv(self, recvbuf, source, **kwargs):
         ensure_contiguous(recvbuf)
-        recvbuf[:] = self._get_send_recv(source)
+        assign_array(recvbuf, self._get_send_recv(source))
 
     def Irecv(self, recvbuf, source, **kwargs):
         def receive():

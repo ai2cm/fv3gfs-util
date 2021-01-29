@@ -3,6 +3,11 @@ from . import constants
 import numpy as np
 
 try:
+    import cupy as cp
+except ModuleNotFoundError:
+    cp = None
+
+try:
     from gt4py.storage.storage import Storage
 except ImportError:
 
@@ -50,3 +55,19 @@ def is_c_contiguous(array: Union[np.ndarray, Storage]) -> bool:
 def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
     if isinstance(maybe_array, np.ndarray) and not is_contiguous(maybe_array):
         raise ValueError("ndarray is not contiguous")
+
+
+def assign_array(
+    left_array: Union[np.ndarray, cp.ndarray],
+    right_array: Union[np.ndarray, cp.ndarray],
+):
+    # The cp.asarray call is required to explicitly copy the data
+    # in the case of numpy arrays or to prevent memory ownership
+    # errors on the cupy arrays from gt4py storages.
+    # This should be fixed in a later version of gt4py
+    if cp and isinstance(left_array, cp.ndarray):
+        left_array[:] = cp.asarray(right_array)
+    elif cp and isinstance(right_array, cp.ndarray):
+        left_array[:] = cp.asnumpy(right_array)
+    else:
+        left_array[:] = right_array
