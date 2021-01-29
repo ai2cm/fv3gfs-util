@@ -58,8 +58,7 @@ def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
 
 
 def assign_array(
-    left_array: Union[np.ndarray, Storage],
-    right_array: Union[np.ndarray, Storage],
+    left_array: Union[np.ndarray, Storage], right_array: Union[np.ndarray, Storage],
 ):
     # The cp.asarray call is required to explicitly copy the data
     # in the case of numpy arrays or to prevent memory ownership
