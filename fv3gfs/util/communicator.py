@@ -85,7 +85,7 @@ class Communicator:
     ) -> Quantity:
         """Transfer subtile regions of a full-tile quantity
         from the tile root rank to all subtiles.
-        
+
         Args:
             send_quantity: quantity to send, only required/used on the tile root rank
             recv_quantity: if provided, assign received data into this Quantity.
@@ -160,7 +160,7 @@ class Communicator:
     ) -> Optional[Quantity]:
         """Transfer subtile regions of a full-tile quantity
         from each rank to the tile root rank.
-        
+
         Args:
             send_quantity: quantity to send
             recv_quantity: if provided, assign received data into this Quantity (only
@@ -236,7 +236,7 @@ class Communicator:
 
     def scatter_state(self, send_state=None, recv_state=None):
         """Transfer a state dictionary from the tile root rank to all subtiles.
-        
+
         Args:
             send_state: the model state to be sent containing the entire tile,
                 required only from the root rank
@@ -290,7 +290,7 @@ class TileCommunicator(Communicator):
 
     def __init__(self, comm, partitioner: TilePartitioner):
         """Initialize a TileCommunicator.
-        
+
         Args:
             comm: mpi4py.Comm object
             partitioner: tile partitioner
@@ -307,7 +307,7 @@ class CubedSphereCommunicator(Communicator):
 
     def __init__(self, comm, partitioner: CubedSpherePartitioner):
         """Initialize a CubedSphereCommunicator.
-        
+
         Args:
             comm: mpi4py.Comm object
             partitioner: cubed sphere partitioner
@@ -477,7 +477,7 @@ class CubedSphereCommunicator(Communicator):
         Args:
             x_quantity: the x-component quantity to be synchronized
             y_quantity: the y-component quantity to be synchronized
-        
+
         Returns:
             request: an asynchronous request object with a .wait() method
         """
@@ -640,7 +640,10 @@ class CubedSphereCommunicator(Communicator):
         # don't want to use a buffer here, because we leave this scope and can't close
         # the context manager. might figure out a way to do it later
         with self.timer.clock("pack"):
-            array = np.ascontiguousarray(in_array)
+            array = np.ascontiguousarray(
+                numpy.asnumpy(in_array) if hasattr(numpy, "asnumpy") else in_array
+            )
+
         with self.timer.clock("Isend"):
             return self.comm.Isend(array, **kwargs)
 
