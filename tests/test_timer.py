@@ -1,4 +1,4 @@
-from fv3gfs.util import Timer
+from fv3gfs.util import Timer, NullTimer
 import pytest
 import time
 
@@ -8,12 +8,28 @@ def timer():
     return Timer()
 
 
+@pytest.fixture
+def null_timer():
+    return NullTimer()
+
+
 def test_start_stop(timer):
     timer.start("label")
     timer.stop("label")
     times = timer.times
     assert "label" in times
     assert len(times) == 1
+    assert timer.hits["label"] == 1
+    assert len(timer.hits) == 1
+
+
+def test_null_timer_cannot_be_enabled(null_timer):
+    with pytest.raises(NotImplementedError):
+        null_timer.enable()
+
+
+def test_null_timer_is_disabled(null_timer):
+    assert not null_timer.enabled
 
 
 def test_clock(timer):
@@ -24,6 +40,8 @@ def test_clock(timer):
     assert "label" in times
     assert len(times) == 1
     assert abs(times["label"] - 0.1) < 1e-2
+    assert timer.hits["label"] == 1
+    assert len(timer.hits) == 1
 
 
 def test_start_twice(timer):
@@ -55,6 +73,7 @@ def test_consecutive_start_stops(timer):
         timer.stop("label")
         assert timer.times["label"] >= previous_time + 0.01
         previous_time = timer.times["label"]
+    assert timer.hits["label"] == 6
 
 
 def test_consecutive_clocks(timer):
@@ -67,6 +86,7 @@ def test_consecutive_clocks(timer):
             time.sleep(0.01)
         assert timer.times["label"] >= previous_time + 0.01
         previous_time = timer.times["label"]
+    assert timer.hits["label"] == 6
 
 
 @pytest.mark.parametrize(
@@ -93,6 +113,7 @@ def test_disabled_timer_does_not_add_key(timer):
     with timer.clock("label2"):
         time.sleep(0.01)
     assert len(timer.times) == 0
+    assert len(timer.hits) == 0
 
 
 def test_disabled_timer_does_not_add_time(timer):
@@ -103,6 +124,7 @@ def test_disabled_timer_does_not_add_time(timer):
     with timer.clock("label"):
         time.sleep(0.01)
     assert timer.times["label"] == initial_time
+    assert timer.hits["label"] == 1
 
 
 @pytest.fixture(params=["clean", "one_label", "two_labels"])
@@ -124,3 +146,4 @@ def used_timer(request, timer):
 def test_timer_reset(used_timer):
     used_timer.reset()
     assert len(used_timer.times) == 0
+    assert len(used_timer.hits) == 0

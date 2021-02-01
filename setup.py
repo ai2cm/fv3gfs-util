@@ -9,6 +9,8 @@ requirements = [
     "numpy>=0.15.0",
     "fsspec>=0.6.0",
     "zarr>=2.3.2",
+    "typing_extensions>=3.7.4",
+    "scipy>=1.3.1",
 ]
 if sys.version_info.major == 3 and sys.version_info.minor == 6:
     requirements.append("dataclasses")
@@ -45,6 +47,6 @@ setup(
     packages=find_namespace_packages(include=["fv3gfs.*"]),
     include_package_data=True,
     url="https://github.com/VulcanClimateModeling/fv3gfs-wrapper",
-    version="0.5.1",
+    version="0.6.0",
     zip_safe=False,
 )
