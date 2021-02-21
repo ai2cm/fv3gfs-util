@@ -189,8 +189,8 @@ def test_monitor_file_store_multi_rank_state(
     units = "m"
     tmpdir = tmpdir_factory.mktemp("data.zarr")
     nz, ny, nx = shape
-    ny_rank = int(ny / layout[0] + ny_rank_add)
-    nx_rank = int(nx / layout[1] + nx_rank_add)
+    ny_rank = int(ny / layout[1] + ny_rank_add)
+    nx_rank = int(nx / layout[0] + nx_rank_add)
     grid = fv3gfs.util.TilePartitioner(layout)
     time = cftime.DatetimeJulian(2010, 6, 20, 6, 0, 0)
     timestep = timedelta(hours=1)

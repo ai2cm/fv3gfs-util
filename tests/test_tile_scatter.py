@@ -32,19 +32,19 @@ def get_tile_communicator_list(partitioner):
 def test_interface_state_two_by_two_per_rank_scatter_tile(layout, numpy):
     state = {
         "pos_j": fv3gfs.util.Quantity(
-            numpy.empty([layout[0] + 1, layout[1] + 1]),
+            numpy.empty([layout[1] + 1, layout[0] + 1]),
             dims=[fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             units="dimensionless",
         ),
         "pos_i": fv3gfs.util.Quantity(
-            numpy.empty([layout[0] + 1, layout[1] + 1], dtype=numpy.int32),
+            numpy.empty([layout[1] + 1, layout[0] + 1], dtype=numpy.int32),
             dims=[fv3gfs.util.Y_INTERFACE_DIM, fv3gfs.util.X_INTERFACE_DIM],
             units="dimensionless",
         ),
     }
 
-    state["pos_j"].view[:, :] = numpy.arange(0, layout[0] + 1)[:, None]
-    state["pos_i"].view[:, :] = numpy.arange(0, layout[1] + 1)[None, :]
+    state["pos_j"].view[:, :] = numpy.arange(0, layout[1] + 1)[:, None]
+    state["pos_i"].view[:, :] = numpy.arange(0, layout[0] + 1)[None, :]
 
     partitioner = fv3gfs.util.TilePartitioner(layout)
     tile_communicator_list = get_tile_communicator_list(partitioner)
@@ -76,17 +76,17 @@ def test_centered_state_one_item_per_rank_scatter_tile(layout, numpy):
     total_ranks = layout[0] * layout[1]
     state = {
         "rank": fv3gfs.util.Quantity(
-            numpy.empty([layout[0], layout[1]]),
+            numpy.empty([layout[1], layout[0]]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
         "rank_pos_j": fv3gfs.util.Quantity(
-            numpy.empty([layout[0], layout[1]]),
+            numpy.empty([layout[1], layout[0]]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
         "rank_pos_i": fv3gfs.util.Quantity(
-            numpy.empty([layout[0], layout[1]]),
+            numpy.empty([layout[1], layout[0]]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
         ),
@@ -131,21 +131,21 @@ def test_centered_state_one_item_per_rank_with_halo_scatter_tile(layout, n_halo,
     total_ranks = layout[0] * layout[1]
     state = {
         "rank": fv3gfs.util.Quantity(
-            numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
+            numpy.empty([layout[1] + 2 * n_halo, layout[0] + 2 * n_halo]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),
             extent=extent,
         ),
         "rank_pos_j": fv3gfs.util.Quantity(
-            numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
+            numpy.empty([layout[1] + 2 * n_halo, layout[0] + 2 * n_halo]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),
             extent=extent,
         ),
         "rank_pos_i": fv3gfs.util.Quantity(
-            numpy.empty([layout[0] + 2 * n_halo, layout[1] + 2 * n_halo]),
+            numpy.empty([layout[1] + 2 * n_halo, layout[0] + 2 * n_halo]),
             dims=[fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM],
             units="dimensionless",
             origin=(n_halo, n_halo),

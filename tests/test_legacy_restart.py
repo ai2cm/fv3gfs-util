@@ -49,8 +49,8 @@ def test_open_c12_restart(layout):
         layout, only_names, tracer_properties
     )
     # C12 has 12 gridcells along each tile side, we divide this across processors
-    ny = 12 / layout[0]
-    nx = 12 / layout[1]
+    ny = 12 / layout[1]
+    nx = 12 / layout[0]
     for state in c12_restart_state_list:
         assert "time" in state.keys()
         assert len(state.keys()) == 63
@@ -127,8 +127,8 @@ def test_open_c12_restart_tracer_properties(layout, tracer_properties):
 @pytest.mark.cpu_only
 def test_open_c12_restart_empty_to_state_without_crashing(layout):
     total_ranks = layout[0] * layout[1]
-    ny = 12 / layout[0]
-    nx = 12 / layout[1]
+    ny = 12 / layout[1]
+    nx = 12 / layout[0]
     shared_buffer = {}
     communicator_list = []
     for rank in range(total_ranks):
@@ -169,8 +169,8 @@ def test_open_c12_restart_empty_to_state_without_crashing(layout):
 @pytest.mark.cpu_only
 def test_open_c12_restart_to_allocated_state_without_crashing(layout):
     total_ranks = layout[0] * layout[1]
-    ny = 12 / layout[0]
-    nx = 12 / layout[1]
+    ny = 12 / layout[1]
+    nx = 12 / layout[0]
     shared_buffer = {}
     communicator_list = []
     for rank in range(total_ranks):
