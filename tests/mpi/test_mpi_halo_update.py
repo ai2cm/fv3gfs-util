@@ -163,7 +163,8 @@ def extent(n_points, dims, nz, ny, nx):
 @pytest.fixture()
 def communicator(cube_partitioner):
     return fv3gfs.util.CubedSphereCommunicator(
-        comm=MPI.COMM_WORLD, partitioner=cube_partitioner,
+        comm=MPI.COMM_WORLD,
+        partitioner=cube_partitioner,
     )
 
 
@@ -245,7 +246,8 @@ def depth_quantity(
 ):
     """A quantity whose value indicates the distance from the computational
     domain boundary."""
-    data = numpy.zeros(shape, dtype=dtype) + numpy.nan
+    data = numpy.zeros(shape, dtype=dtype)
+    data[:] = numpy.nan
     for n_inside in range(max(n_points, max(extent) // 2), -1, -1):
         for i, dim in enumerate(dims):
             if (n_inside <= extent[i] // 2) and (dim in fv3gfs.util.HORIZONTAL_DIMS):
@@ -263,7 +265,11 @@ def depth_quantity(
                 pos[i] = origin[i] + extent[i] + n_outside - 1
                 data[tuple(pos)] = numpy.nan
     quantity = fv3gfs.util.Quantity(
-        data, dims=dims, units=units, origin=origin, extent=extent,
+        data,
+        dims=dims,
+        units=units,
+        origin=origin,
+        extent=extent,
     )
     return quantity
 
@@ -309,7 +315,11 @@ def zeros_quantity(dims, units, origin, extent, shape, numpy, dtype):
     outside of it."""
     data = numpy.ones(shape, dtype=dtype)
     quantity = fv3gfs.util.Quantity(
-        data, dims=dims, units=units, origin=origin, extent=extent,
+        data,
+        dims=dims,
+        units=units,
+        origin=origin,
+        extent=extent,
     )
     quantity.view[:] = 0.0
     return quantity
