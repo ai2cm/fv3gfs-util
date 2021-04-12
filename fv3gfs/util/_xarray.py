@@ -3,6 +3,7 @@ try:
     from xarray import DataArray
 except ModuleNotFoundError as err:
     from ._optional_imports import RaiseWhenAccessed
+
     xr = RaiseWhenAccessed(err)
     DataArray = RaiseWhenAccessed(err)
 

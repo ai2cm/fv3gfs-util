@@ -1,10 +1,12 @@
 from typing import Union, Tuple
 import cftime
 import logging
+
 try:
     import zarr
 except ModuleNotFoundError as err:
     from ._optional_imports import RaiseWhenAccessed
+
     zarr = RaiseWhenAccessed(err)
 import numpy as np
 from . import _xarray

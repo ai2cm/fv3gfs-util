@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 import fv3gfs.util
 import fv3gfs.util.quantity
+
 try:
     import xarray as xr
 except ModuleNotFoundError:

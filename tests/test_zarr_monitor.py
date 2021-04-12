@@ -1,4 +1,5 @@
 import tempfile
+
 try:
     import zarr
 except ModuleNotFoundError:
@@ -6,6 +7,7 @@ except ModuleNotFoundError:
 import cftime
 from datetime import timedelta
 import pytest
+
 try:
     import xarray as xr
 except ModuleNotFoundError:
