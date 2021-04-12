@@ -1,6 +1,6 @@
 from typing import Iterable, BinaryIO, Generator
 import os
-import xarray as xr
+from . import _xarray
 import copy
 from ._properties import RestartProperties, RESTART_PROPERTIES
 from . import io, filesystem, constants
@@ -140,7 +140,7 @@ def prepend_label(filename, label=None):
 def load_partial_state_from_restart_file(
     file, restart_properties: RestartProperties, only_names=None
 ):
-    ds = xr.open_dataset(file).isel(Time=0).drop_vars("Time")
+    ds = _xarray.xr.open_dataset(file).isel(Time=0).drop_vars("Time")
     state = map_keys(ds.data_vars, _get_restart_standard_names(restart_properties))
     state = _apply_restart_metadata(state, restart_properties)
     if only_names is None:

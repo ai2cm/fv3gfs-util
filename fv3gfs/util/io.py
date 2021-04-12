@@ -1,5 +1,5 @@
 import cftime
-import xarray as xr
+from . import _xarray
 from typing import TextIO
 from .time import FMS_TO_CFTIME_TYPE
 from . import filesystem
@@ -21,7 +21,7 @@ def write_state(state: dict, filename: str) -> None:
         ds.to_netcdf(f)
 
 
-def _extract_time(value: xr.DataArray) -> cftime.datetime:
+def _extract_time(value: _xarray.DataArray) -> cftime.datetime:
     """Exctract time value from read-in state."""
     if value.ndim > 0:
         raise ValueError(
@@ -47,7 +47,7 @@ def read_state(filename: str) -> dict:
     """
     out_dict = {}
     with filesystem.open(filename, "rb") as f:
-        ds = xr.open_dataset(f, use_cftime=True)
+        ds = _xarray.xr.open_dataset(f, use_cftime=True)
         for name, value in ds.data_vars.items():
             if name == "time":
                 out_dict[name] = _extract_time(value)

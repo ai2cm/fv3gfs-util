@@ -1,9 +1,13 @@
 from typing import Union, Tuple
 import cftime
 import logging
-import zarr
+try:
+    import zarr
+except ModuleNotFoundError as err:
+    from ._optional_imports import RaiseWhenAccessed
+    zarr = RaiseWhenAccessed(err)
 import numpy as np
-import xarray as xr
+from . import _xarray
 from . import constants, utils
 from .partitioner import CubedSpherePartitioner, subtile_slice
 
@@ -39,7 +43,7 @@ class ZarrMonitor:
 
     def __init__(
         self,
-        store: Union[str, zarr.storage.MutableMapping],
+        store: Union[str, "zarr.storage.MutableMapping"],
         partitioner: CubedSpherePartitioner,
         mode: str = "w",
         mpi_comm=DummyComm(),
@@ -273,7 +277,7 @@ class _ZarrTimeWriter(_ZarrVariableWriter):
         )
 
     def append(self, time):
-        array = xr.DataArray()
+        array = _xarray.DataArray()
         if self.array is None:
             self._init_zarr(array)
             self._set_time_encoding_attrs(time)

@@ -1,6 +1,10 @@
-import xarray as xr
-
-__all__ = ["to_dataset"]
+try:
+    import xarray as xr
+    from xarray import DataArray
+except ModuleNotFoundError as err:
+    from ._optional_imports import RaiseWhenAccessed
+    xr = RaiseWhenAccessed(err)
+    DataArray = RaiseWhenAccessed(err)
 
 
 def to_dataset(state):
