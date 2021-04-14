@@ -8,6 +8,10 @@ except ModuleNotFoundError as err:
     DataArray = RaiseWhenAccessed(err)
 
 
+def open_dataset(*args, **kwargs):
+    return xr.open_dataset(*args, **kwargs)
+
+
 def to_dataset(state):
     data_vars = {
         name: value.data_array for name, value in state.items() if name != "time"

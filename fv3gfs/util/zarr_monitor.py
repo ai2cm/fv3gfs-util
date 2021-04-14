@@ -9,7 +9,7 @@ except ModuleNotFoundError as err:
 
     zarr = RaiseWhenAccessed(err)
 import numpy as np
-from . import _xarray
+from . import _xarray as xr
 from . import constants, utils
 from .partitioner import CubedSpherePartitioner, subtile_slice
 
@@ -279,7 +279,7 @@ class _ZarrTimeWriter(_ZarrVariableWriter):
         )
 
     def append(self, time):
-        array = _xarray.DataArray()
+        array = xr.DataArray()
         if self.array is None:
             self._init_zarr(array)
             self._set_time_encoding_attrs(time)
