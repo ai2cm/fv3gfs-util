@@ -174,6 +174,7 @@ def communicator_list(cube_partitioner):
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
                 partitioner=cube_partitioner,
+                timer=fv3gfs.util.Timer(),
             )
         )
     return return_list
@@ -280,7 +281,11 @@ def depth_quantity_list(
                     pos[i] = origin[i] + extent[i] + n_outside - 1
                     data[tuple(pos)] = numpy.nan
         quantity = fv3gfs.util.Quantity(
-            data, dims=dims, units=units, origin=origin, extent=extent,
+            data,
+            dims=dims,
+            units=units,
+            origin=origin,
+            extent=extent,
         )
         return_list.append(quantity)
     return return_list
@@ -310,7 +315,7 @@ def test_halo_update_timer(
         req_list.append(req)
     for req in req_list:
         req.wait()
-    required_times_keys = ("pack", "unpack", "Isend", "Recv")
+    required_times_keys = ("pack", "unpack", "Isend", "Irecv")
     for communicator in communicator_list:
         with subtests.test(rank=communicator.rank):
             assert isinstance(communicator.timer, fv3gfs.util.Timer)
@@ -371,7 +376,11 @@ def zeros_quantity_list(total_ranks, dims, units, origin, extent, shape, numpy, 
     for rank in range(total_ranks):
         data = numpy.ones(shape, dtype=dtype)
         quantity = fv3gfs.util.Quantity(
-            data, dims=dims, units=units, origin=origin, extent=extent,
+            data,
+            dims=dims,
+            units=units,
+            origin=origin,
+            extent=extent,
         )
         quantity.view[:] = 0.0
         return_list.append(quantity)
@@ -518,7 +527,7 @@ def test_vector_halo_update_timer(
         )
     for req in req_list:
         req.wait()
-    required_times_keys = ("pack", "unpack", "Isend", "Recv")
+    required_times_keys = ("pack", "unpack", "Isend", "Irecv")
     for communicator in communicator_list:
         with subtests.test(rank=communicator.rank):
             assert isinstance(communicator.timer, fv3gfs.util.Timer)

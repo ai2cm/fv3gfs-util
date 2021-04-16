@@ -88,6 +88,7 @@ def communicator_list(layout):
             fv3gfs.util.CubedSphereCommunicator(
                 fv3gfs.util.testing.DummyComm(rank, total_ranks, shared_buffer),
                 fv3gfs.util.CubedSpherePartitioner(fv3gfs.util.TilePartitioner(layout)),
+                timer=fv3gfs.util.Timer(),
             )
         )
     return return_list
@@ -149,7 +150,11 @@ def get_quantity(dims, units, extent, n_halo, numpy):
             origin[i] += n_halo
             shape[i] += 2 * n_halo
     return fv3gfs.util.Quantity(
-        numpy.zeros(shape), dims, units, origin=tuple(origin), extent=tuple(extent),
+        numpy.zeros(shape),
+        dims,
+        units,
+        origin=tuple(origin),
+        extent=tuple(extent),
     )
 
 

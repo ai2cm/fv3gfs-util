@@ -92,6 +92,7 @@ def communicator_list(cube_partitioner):
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
                 partitioner=cube_partitioner,
+                timer=fv3gfs.util.Timer(),
             )
         )
     return return_list

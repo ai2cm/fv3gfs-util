@@ -139,7 +139,11 @@ def get_quantity(dims, units, extent, n_halo, numpy):
             origin[i] += n_halo
             shape[i] += 2 * n_halo
     return fv3gfs.util.Quantity(
-        numpy.zeros(shape), dims, units, origin=tuple(origin), extent=tuple(extent),
+        numpy.zeros(shape),
+        dims,
+        units,
+        origin=tuple(origin),
+        extent=tuple(extent),
     )
 
 

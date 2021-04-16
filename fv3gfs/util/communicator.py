@@ -1,12 +1,14 @@
-from typing import Tuple, Mapping, Optional, Sequence, cast
+from typing import Tuple, Mapping, Optional, Sequence, cast, List
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
 from .boundary import Boundary
 from .rotate import rotate_scalar_data, rotate_vector_data
-from .buffer import array_buffer, send_buffer, recv_buffer
-from ._timing import Timer
+from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
+from ._timing import Timer, NullTimer
 import logging
+from numpy import ndarray
+from mpi4py import MPI
 
 __all__ = [
     "TileCommunicator",
@@ -42,23 +44,52 @@ class FunctionRequest:
 
 
 class HaloUpdateRequest:
-    """asynchronous request object for halo updates"""
+    """Asynchronous request object for halo updates."""
 
-    def __init__(self, send_requests, recv_requests):
-        self._send_requests = send_requests
-        self._recv_requests = recv_requests
+    _send_data = List[Tuple[MPI.Request, Buffer]]
+    _recv_data = List[Tuple[MPI.Request, Buffer, ndarray]]
+
+    def __init__(
+        self,
+        send_data: Tuple[MPI.Request, Buffer],
+        recv_data: Tuple[MPI.Request, Buffer, ndarray],
+        timer: Optional[Timer] = None,
+    ):
+        """Build a halo request.
+
+        Args:
+            send_data: a tuple of the MPI request and the buffer sent
+            recv_data: a tuple of the MPI request, the temporary message buffer and
+            the destination buffer
+            timer: optional, time the wait & unpack of a halo exchange
+
+        """
+        self._send_data = send_data
+        self._recv_data = recv_data
+        self._timer: Timer = timer if timer is not None else NullTimer()
 
     def wait(self):
-        for request in self._recv_requests:
-            request.wait()
-        for request in self._send_requests:
-            request.wait()
+        # Wait & unpack into destination then
+        # clean up by inserting back all buffers back in cache
+        # for potential reuse
+        for request, transfer_buffer, destination_array in self._recv_data:
+            with self._timer.clock("wait"):
+                request.wait()
+            with self._timer.clock("unpack"):
+                destination_array[:] = transfer_buffer.array
+                Buffer.push_to_cache(transfer_buffer)
+        for request, transfer_buffer in self._send_data:
+            with self._timer.clock("wait"):
+                request.wait()
+            with self._timer.clock("unpack"):
+                Buffer.push_to_cache(transfer_buffer)
 
 
 class Communicator:
-    def __init__(self, comm, partitioner):
+    def __init__(self, comm, partitioner, force_cpu: Optional[bool] = True):
         self.comm = comm
         self.partitioner: Partitioner = partitioner
+        self._force_cpu = force_cpu
 
     @property
     def rank(self) -> int:
@@ -66,14 +97,14 @@ class Communicator:
         return self.comm.Get_rank()
 
     def _Scatter(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf) as send, recv_buffer(
-            numpy.empty, recvbuf
+        with send_buffer(numpy.empty, sendbuf, False) as send, recv_buffer(
+            numpy.empty, recvbuf, False
         ) as recv:
             self.comm.Scatter(send, recv, **kwargs)
 
     def _Gather(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf) as send, recv_buffer(
-            numpy.empty, recvbuf
+        with send_buffer(numpy.empty, sendbuf, False) as send, recv_buffer(
+            numpy.empty, recvbuf, False
         ) as recv:
             self.comm.Gather(send, recv, **kwargs)
 
@@ -84,7 +115,7 @@ class Communicator:
     ) -> Quantity:
         """Transfer subtile regions of a full-tile quantity
         from the tile root rank to all subtiles.
-        
+
         Args:
             send_quantity: quantity to send, only required/used on the tile root rank
             recv_quantity: if provided, assign received data into this Quantity.
@@ -107,6 +138,7 @@ class Communicator:
                 metadata.np.empty,
                 (self.partitioner.total_ranks,) + shape,
                 dtype=metadata.dtype,
+                force_cpu=self._force_cpu,
             ) as sendbuf:
                 for rank in range(0, self.partitioner.total_ranks):
                     subtile_slice = self.partitioner.subtile_slice(
@@ -159,7 +191,7 @@ class Communicator:
     ) -> Optional[Quantity]:
         """Transfer subtile regions of a full-tile quantity
         from each rank to the tile root rank.
-        
+
         Args:
             send_quantity: quantity to send
             recv_quantity: if provided, assign received data into this Quantity (only
@@ -173,6 +205,7 @@ class Communicator:
                 send_quantity.np.empty,
                 (self.partitioner.total_ranks,) + tuple(send_quantity.extent),
                 dtype=send_quantity.data.dtype,
+                force_cpu=self._force_cpu,
             ) as recvbuf:
                 self._Gather(
                     send_quantity.np,
@@ -198,7 +231,10 @@ class Communicator:
                 result = recv_quantity
         else:
             self._Gather(
-                send_quantity.np, send_quantity.view[:], None, root=constants.ROOT_RANK,
+                send_quantity.np,
+                send_quantity.view[:],
+                None,
+                root=constants.ROOT_RANK,
             )
             result = None
         return result
@@ -235,7 +271,7 @@ class Communicator:
 
     def scatter_state(self, send_state=None, recv_state=None):
         """Transfer a state dictionary from the tile root rank to all subtiles.
-        
+
         Args:
             send_state: the model state to be sent containing the entire tile,
                 required only from the root rank
@@ -285,14 +321,16 @@ class Communicator:
 class TileCommunicator(Communicator):
     """Performs communications within a single tile or region of a tile"""
 
-    def __init__(self, comm, partitioner: TilePartitioner):
+    def __init__(
+        self, comm, partitioner: TilePartitioner, force_cpu: Optional[bool] = True
+    ):
         """Initialize a TileCommunicator.
-        
+
         Args:
             comm: mpi4py.Comm object
             partitioner: tile partitioner
         """
-        super(TileCommunicator, self).__init__(comm, partitioner)
+        super(TileCommunicator, self).__init__(comm, partitioner, force_cpu=force_cpu)
         self.partitioner: TilePartitioner = partitioner
 
 
@@ -302,17 +340,23 @@ class CubedSphereCommunicator(Communicator):
     timer: Timer
     partitioner: CubedSpherePartitioner
 
-    def __init__(self, comm, partitioner: CubedSpherePartitioner):
+    def __init__(
+        self,
+        comm,
+        partitioner: CubedSpherePartitioner,
+        force_cpu: Optional[bool] = True,
+        timer: Optional[Timer] = None,
+    ):
         """Initialize a CubedSphereCommunicator.
-        
         Args:
             comm: mpi4py.Comm object
             partitioner: cubed sphere partitioner
         """
-        self.timer: Timer = Timer()
+        self.timer: Timer = timer if timer is not None else NullTimer()
         self._tile_communicator: Optional[TileCommunicator] = None
         self._boundaries: Optional[Mapping[int, Boundary]] = None
         self._last_halo_tag = 0
+        self._force_cpu = force_cpu
         super(CubedSphereCommunicator, self).__init__(comm, partitioner)
         self.partitioner: CubedSpherePartitioner = partitioner
 
@@ -397,43 +441,46 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         tag = self._get_halo_tag()
-        send_requests = self._Isend_halos(quantity, n_points, tag=tag)
-        recv_requests = self._Irecv_halos(quantity, n_points, tag=tag)
-        return HaloUpdateRequest(send_requests, recv_requests)
+        send_data = self._Isend_halos(quantity, n_points, tag=tag)
+        recv_data = self._Irecv_halos(quantity, n_points, tag=tag)
+        return HaloUpdateRequest(send_data, recv_data, self.timer)
 
     def _Isend_halos(self, quantity: Quantity, n_points: int, tag: int = 0):
-        send_requests = []
+        send_data = []
         for boundary in self.boundaries.values():
             with self.timer.clock("pack"):
-                data = boundary.send_view(quantity, n_points=n_points)
+                source_view = boundary.send_view(quantity, n_points=n_points)
                 # sending data across the boundary will rotate the data
                 # n_clockwise_rotations times, due to the difference in axis orientation.\
                 # Thus we rotate that number of times counterclockwise before sending,
                 # to get the right final orientation
-                data = rotate_scalar_data(
-                    data, quantity.dims, quantity.np, -boundary.n_clockwise_rotations
+                source_view = rotate_scalar_data(
+                    source_view,
+                    quantity.dims,
+                    quantity.np,
+                    -boundary.n_clockwise_rotations,
                 )
-            send_requests.append(
-                self._Isend(quantity.np, data, dest=boundary.to_rank, tag=tag)
+            send_data.append(
+                self._Isend(quantity.np, source_view[:], dest=boundary.to_rank, tag=tag)
             )
-        return send_requests
+        return send_data
 
     def _Irecv_halos(self, quantity: Quantity, n_points: int, tag: int = 0):
-        recv_requests = []
+        recv_data = []
         for boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("unpack"):
                 dest_view = boundary.recv_view(quantity, n_points=n_points)
-            logger.debug(
-                "finish_halo_update: retrieving boundary_type=%s shape=%s from_rank=%s to_rank=%s",
-                boundary_type,
-                dest_view.shape,
-                boundary.to_rank,
-                self.rank,
-            )
-            recv_requests.append(
+                logger.debug(
+                    "finish_halo_update: retrieving boundary_type=%s shape=%s from_rank=%s to_rank=%s",
+                    boundary_type,
+                    dest_view.shape,
+                    boundary.to_rank,
+                    self.rank,
+                )
+            recv_data.append(
                 self._Irecv(quantity.np, dest_view, source=boundary.to_rank, tag=tag)
             )
-        return recv_requests
+        return recv_data
 
     def finish_halo_update(self, quantity: Quantity, n_points: int):
         """Deprecated, do not use."""
@@ -443,7 +490,10 @@ class CubedSphereCommunicator(Communicator):
         )
 
     def vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ):
         """Perform a halo update of a horizontal vector quantity.
 
@@ -474,7 +524,7 @@ class CubedSphereCommunicator(Communicator):
         Args:
             x_quantity: the x-component quantity to be synchronized
             y_quantity: the y-component quantity to be synchronized
-        
+
         Returns:
             request: an asynchronous request object with a .wait() method
         """
@@ -487,7 +537,7 @@ class CubedSphereCommunicator(Communicator):
         recv_requests = self._Irecv_vector_shared_boundary(
             x_quantity, y_quantity, tag=tag
         )
-        return HaloUpdateRequest(send_requests, recv_requests)
+        return HaloUpdateRequest(send_requests, recv_requests, self.timer)
 
     def synchronize_vector_interfaces(self, x_quantity: Quantity, y_quantity: Quantity):
         """
@@ -509,7 +559,10 @@ class CubedSphereCommunicator(Communicator):
         req.wait()
 
     def start_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ) -> HaloUpdateRequest:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -526,17 +579,17 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
-        send_requests = self._Isend_vector_halos(
+        send_data = self._Isend_vector_halos(
             x_quantity, y_quantity, n_points, tags=(tag1, tag2)
         )
-        recv_requests = self._Irecv_halos(x_quantity, n_points, tag=tag1)
-        recv_requests.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
-        return HaloUpdateRequest(send_requests, recv_requests)
+        recv_data = self._Irecv_halos(x_quantity, n_points, tag=tag1)
+        recv_data.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
+        return HaloUpdateRequest(send_data, recv_data, self.timer)
 
     def _Isend_vector_halos(
         self, x_quantity, y_quantity, n_points, tags: Tuple[int, int] = (0, 0)
     ):
-        send_requests = []
+        send_data = []
         for boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("pack"):
                 x_data = boundary.send_view(x_quantity, n_points=n_points)
@@ -557,13 +610,13 @@ class CubedSphereCommunicator(Communicator):
                     x_data.shape,
                     y_data.shape,
                 )
-            send_requests.append(
+            send_data.append(
                 self._Isend(x_quantity.np, x_data, dest=boundary.to_rank, tag=tags[0])
             )
-            send_requests.append(
+            send_data.append(
                 self._Isend(y_quantity.np, y_data, dest=boundary.to_rank, tag=tags[1])
             )
-        return send_requests
+        return send_data
 
     def _Isend_vector_shared_boundary(self, x_quantity, y_quantity, tag=0):
         south_boundary = self.boundaries[constants.SOUTH]
@@ -634,35 +687,43 @@ class CubedSphereCommunicator(Communicator):
         return recv_requests
 
     def _Isend(self, numpy, in_array, **kwargs):
-        # don't want to use a buffer here, because we leave this scope and can't close
-        # the context manager. might figure out a way to do it later
+        # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
-            array = numpy.ascontiguousarray(in_array)
+            buffer = Buffer.get_from_cache(
+                numpy, in_array.shape, in_array.dtype, self._force_cpu
+            )
+            buffer.array = numpy.ascontiguousarray(in_array)
         with self.timer.clock("Isend"):
-            return self.comm.Isend(array, **kwargs)
+            request = self.comm.Isend(buffer.array, **kwargs)
+        return (request, buffer)
 
     def _Send(self, numpy, in_array, **kwargs):
-        with send_buffer(numpy.empty, in_array, timer=self.timer) as sendbuf:
+        with send_buffer(
+            numpy.empty, in_array, self._force_cpu, timer=self.timer
+        ) as sendbuf:
             self.comm.Send(sendbuf, **kwargs)
 
     def _Recv(self, numpy, out_array, **kwargs):
-        with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
+        with recv_buffer(
+            numpy.empty, out_array, self._force_cpu, timer=self.timer
+        ) as recvbuf:
             with self.timer.clock("Recv"):
                 self.comm.Recv(recvbuf, **kwargs)
 
     def _Irecv(self, numpy, out_array, **kwargs):
-        # we can't perform a true Irecv because we need to receive the data into a
-        # buffer and then copy that buffer into the output array. Instead we will
-        # just do a Recv() when wait is called.
-        def recv():
-            with recv_buffer(numpy.empty, out_array, timer=self.timer) as recvbuf:
-                with self.timer.clock("Recv"):
-                    self.comm.Recv(recvbuf, **kwargs)
-
-        return FunctionRequest(recv)
+        # Prepare a contiguous buffer to receive data
+        with self.timer.clock("Irecv"):
+            buffer = Buffer.get_from_cache(
+                numpy, out_array.shape, out_array.dtype, self._force_cpu
+            )
+            recv_request = self.comm.Irecv(buffer.array, **kwargs)
+        return (recv_request, buffer, out_array)
 
     def finish_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ):
         """Deprecated, do not use."""
         raise NotImplementedError(

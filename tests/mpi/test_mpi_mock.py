@@ -77,7 +77,9 @@ def send_recv_multiple_async_calls(comm, numpy):
 
     for from_rank in range(size):
         if from_rank != rank:
-            with fv3gfs.util.recv_buffer(numpy, recv_data[from_rank, :]) as recvbuf:
+            with fv3gfs.util.recv_buffer(
+                numpy, recv_data[from_rank, :], False
+            ) as recvbuf:
                 comm.Recv(recvbuf, source=from_rank, tag=0)
     for req in req_list:
         req.wait()
