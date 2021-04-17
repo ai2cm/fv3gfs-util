@@ -3,6 +3,11 @@ from . import constants
 import numpy as np
 
 try:
+    import cupy as cp
+except ImportError:
+    cp = None
+
+try:
     from gt4py.storage.storage import Storage
 except ImportError:
 
@@ -50,3 +55,14 @@ def is_c_contiguous(array: Union[np.ndarray, Storage]) -> bool:
 def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
     if isinstance(maybe_array, np.ndarray) and not is_contiguous(maybe_array):
         raise ValueError("ndarray is not contiguous")
+
+
+def assign_array(
+    to_array: Union[np.ndarray, Storage], from_array: Union[np.ndarray, Storage]
+):
+    if cp and isinstance(to_array, cp.ndarray):
+        to_array[:] = cp.asarray(from_array)
+    elif cp and isinstance(from_array, cp.ndarray):
+        to_array[:] = cp.asnumpy(from_array)
+    else:
+        to_array[:] = from_array

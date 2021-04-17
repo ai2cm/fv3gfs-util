@@ -3,11 +3,11 @@ from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
 import numpy as np
 import contextlib
-from .utils import is_c_contiguous
+from .utils import is_c_contiguous, assign_array
 from .types import Allocator
 
-BufferKey_t = Tuple[Callable, Iterable[int], type]
-BUFFER_CACHE: Dict[BufferKey_t, Buffer] = {}
+BufferKey = Tuple[Callable, Iterable[int], type]
+BUFFER_CACHE: Dict[BufferKey, Buffer] = {}
 
 
 class Buffer:
@@ -17,10 +17,10 @@ class Buffer:
     array: ndarray allocated
     """
 
-    _key: BufferKey_t
+    _key: BufferKey
     array: np.ndarray
 
-    def __init__(self, key: BufferKey_t, array: np.ndarray):
+    def __init__(self, key: BufferKey, array: np.ndarray):
         """Init a cacheable buffer.
 
         Args:
@@ -62,6 +62,18 @@ class Buffer:
             buffer: buffer to push back in cache, using internal key
         """
         BUFFER_CACHE[buffer._key].append(buffer)
+
+    def assign_to(self, destination_array):
+        if self._force_cpu:
+            assign_array(destination_array, self.array)
+        else:
+            destination_array[:] = self.array
+
+    def assign_from(self, source_array):
+        if self._force_cpu:
+            assign_array(self.array, source_array)
+        else:
+            self.array[:] = source_array
 
 
 @contextlib.contextmanager

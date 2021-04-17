@@ -76,7 +76,7 @@ class HaloUpdateRequest:
             with self._timer.clock("wait"):
                 request.wait()
             with self._timer.clock("unpack"):
-                destination_array[:] = transfer_buffer.array
+                transfer_buffer.assign_to(destination_array)
                 Buffer.push_to_cache(transfer_buffer)
         for request, transfer_buffer in self._send_data:
             with self._timer.clock("wait"):
@@ -357,7 +357,7 @@ class CubedSphereCommunicator(Communicator):
         self._boundaries: Optional[Mapping[int, Boundary]] = None
         self._last_halo_tag = 0
         self._force_cpu = force_cpu
-        super(CubedSphereCommunicator, self).__init__(comm, partitioner)
+        super(CubedSphereCommunicator, self).__init__(comm, partitioner, force_cpu)
         self.partitioner: CubedSpherePartitioner = partitioner
 
     def _get_halo_tag(self) -> int:
@@ -441,8 +441,8 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         tag = self._get_halo_tag()
-        send_data = self._Isend_halos(quantity, n_points, tag=tag)
         recv_data = self._Irecv_halos(quantity, n_points, tag=tag)
+        send_data = self._Isend_halos(quantity, n_points, tag=tag)
         return HaloUpdateRequest(send_data, recv_data, self.timer)
 
     def _Isend_halos(self, quantity: Quantity, n_points: int, tag: int = 0):
