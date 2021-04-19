@@ -57,9 +57,15 @@ def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
         raise ValueError("ndarray is not contiguous")
 
 
-def assign_array(
+def assign_array_via_cpu(
     to_array: Union[np.ndarray, Storage], from_array: Union[np.ndarray, Storage]
 ):
+    """Assign to/from a CPU array, downloading/uploading from GPU if need be.
+
+    Args:
+        to_array: destination ndarray
+        from_array: source ndarray
+    """
     if cp and isinstance(to_array, cp.ndarray):
         to_array[:] = cp.asarray(from_array)
     elif cp and isinstance(from_array, cp.ndarray):
