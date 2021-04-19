@@ -1,4 +1,3 @@
-from __future__ import annotations
 from typing import Callable, Iterable, Optional, Dict, Tuple
 from ._timing import Timer, NullTimer
 import numpy as np
@@ -7,7 +6,7 @@ from .utils import is_c_contiguous, assign_array_via_cpu
 from .types import Allocator
 
 BufferKey = Tuple[Callable, Iterable[int], type]
-BUFFER_CACHE: Dict[BufferKey, Buffer] = {}
+BUFFER_CACHE: Dict[BufferKey, "Buffer"] = {}
 
 
 class Buffer:
@@ -35,7 +34,7 @@ class Buffer:
     @classmethod
     def get_from_cache(
         cls, allocator: Allocator, shape: Iterable[int], dtype: type, force_cpu: bool
-    ) -> Buffer:
+    ) -> "Buffer":
         """Retrieve or insert then retrieve of buffer from cache.
 
         Args:
@@ -43,6 +42,8 @@ class Buffer:
             shape: shape of array
             dtype: type of array elements
             force_cpu: allocate only CPU
+        Return:
+            a buffer wrapping an allocated array
         """
         if force_cpu:
             allocator = np.empty
@@ -57,7 +58,7 @@ class Buffer:
             return cls(key, array, force_cpu)
 
     @staticmethod
-    def push_to_cache(buffer: Buffer):
+    def push_to_cache(buffer: "Buffer"):
         """Push the buffer back into the cache.
 
         Args:

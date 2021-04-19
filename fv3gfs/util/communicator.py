@@ -8,7 +8,6 @@ from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._timing import Timer, NullTimer
 import logging
 from numpy import ndarray
-from mpi4py import MPI
 
 __all__ = [
     "TileCommunicator",
@@ -46,13 +45,13 @@ class FunctionRequest:
 class HaloUpdateRequest:
     """Asynchronous request object for halo updates."""
 
-    _send_data = List[Tuple[MPI.Request, Buffer]]
-    _recv_data = List[Tuple[MPI.Request, Buffer, ndarray]]
+    _send_data = List[Tuple["mpi4py.MPI.Request", Buffer]]
+    _recv_data = List[Tuple["mpi4py.MPI.Request", Buffer, ndarray]]
 
     def __init__(
         self,
-        send_data: Tuple[MPI.Request, Buffer],
-        recv_data: Tuple[MPI.Request, Buffer, ndarray],
+        send_data: Tuple["mpi4py.MPI.Request", Buffer],
+        recv_data: Tuple["mpi4py.MPI.Request", Buffer, ndarray],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
@@ -72,16 +71,16 @@ class HaloUpdateRequest:
         # Wait & unpack into destination then
         # clean up by inserting back all buffers back in cache
         # for potential reuse
+        for request, transfer_buffer in self._send_data:
+            with self._timer.clock("wait"):
+                request.wait()
+            with self._timer.clock("unpack"):
+                Buffer.push_to_cache(transfer_buffer)
         for request, transfer_buffer, destination_array in self._recv_data:
             with self._timer.clock("wait"):
                 request.wait()
             with self._timer.clock("unpack"):
                 transfer_buffer.assign_to(destination_array)
-                Buffer.push_to_cache(transfer_buffer)
-        for request, transfer_buffer in self._send_data:
-            with self._timer.clock("wait"):
-                request.wait()
-            with self._timer.clock("unpack"):
                 Buffer.push_to_cache(transfer_buffer)
 
 
