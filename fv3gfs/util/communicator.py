@@ -231,10 +231,7 @@ class Communicator:
                 result = recv_quantity
         else:
             self._Gather(
-                send_quantity.np,
-                send_quantity.view[:],
-                None,
-                root=constants.ROOT_RANK,
+                send_quantity.np, send_quantity.view[:], None, root=constants.ROOT_RANK,
             )
             result = None
         return result
@@ -490,10 +487,7 @@ class CubedSphereCommunicator(Communicator):
         )
 
     def vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
         """Perform a halo update of a horizontal vector quantity.
 
@@ -559,10 +553,7 @@ class CubedSphereCommunicator(Communicator):
         req.wait()
 
     def start_vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ) -> HaloUpdateRequest:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -720,10 +711,7 @@ class CubedSphereCommunicator(Communicator):
         return (recv_request, buffer, out_array)
 
     def finish_vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
         """Deprecated, do not use."""
         raise NotImplementedError(

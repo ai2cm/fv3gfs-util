@@ -281,11 +281,7 @@ def depth_quantity_list(
                     pos[i] = origin[i] + extent[i] + n_outside - 1
                     data[tuple(pos)] = numpy.nan
         quantity = fv3gfs.util.Quantity(
-            data,
-            dims=dims,
-            units=units,
-            origin=origin,
-            extent=extent,
+            data, dims=dims, units=units, origin=origin, extent=extent,
         )
         return_list.append(quantity)
     return return_list
@@ -376,11 +372,7 @@ def zeros_quantity_list(total_ranks, dims, units, origin, extent, shape, numpy, 
     for rank in range(total_ranks):
         data = numpy.ones(shape, dtype=dtype)
         quantity = fv3gfs.util.Quantity(
-            data,
-            dims=dims,
-            units=units,
-            origin=origin,
-            extent=extent,
+            data, dims=dims, units=units, origin=origin, extent=extent,
         )
         quantity.view[:] = 0.0
         return_list.append(quantity)
