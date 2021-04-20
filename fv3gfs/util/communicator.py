@@ -6,6 +6,7 @@ from .boundary import Boundary
 from .rotate import rotate_scalar_data, rotate_vector_data
 from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._timing import Timer, NullTimer
+from .types import AsyncRequest
 import logging
 from numpy import ndarray
 
@@ -45,13 +46,13 @@ class FunctionRequest:
 class HaloUpdateRequest:
     """Asynchronous request object for halo updates."""
 
-    _send_data = List[Tuple["mpi4py.MPI.Request", Buffer]]
-    _recv_data = List[Tuple["mpi4py.MPI.Request", Buffer, ndarray]]
+    _send_data = List[Tuple[AsyncRequest, Buffer]]
+    _recv_data = List[Tuple[AsyncRequest, Buffer, ndarray]]
 
     def __init__(
         self,
-        send_data: Tuple["mpi4py.MPI.Request", Buffer],
-        recv_data: Tuple["mpi4py.MPI.Request", Buffer, ndarray],
+        send_data: Tuple[AsyncRequest, Buffer],
+        recv_data: Tuple[AsyncRequest, Buffer, ndarray],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
@@ -323,8 +324,9 @@ class TileCommunicator(Communicator):
         """Initialize a TileCommunicator.
 
         Args:
-            comm: mpi4py.Comm object
+            comm: communication object behaving like mpi4py.Comm
             partitioner: tile partitioner
+            force_cpu: force all communication to go through central memory
         """
         super(TileCommunicator, self).__init__(comm, partitioner, force_cpu=force_cpu)
         self.partitioner: TilePartitioner = partitioner

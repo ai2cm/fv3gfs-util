@@ -17,3 +17,11 @@ class NumpyModule(Protocol):
 
     def rot90(self, m: Array, k: int = 1, axes: Tuple[int, int] = (0, 1)):
         ...
+
+
+class AsyncRequest(Protocol):
+    """Define the result of an over-the-network capable communication API"""
+
+    def wait():
+        """Block the current thread waiting for the request to be completed"""
+        ...

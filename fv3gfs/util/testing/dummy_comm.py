@@ -1,6 +1,6 @@
 import logging
 import copy
-from ..utils import ensure_contiguous
+from ..utils import ensure_contiguous, assign_array_via_cpu
 
 
 logger = logging.getLogger("fv3gfs.util")
@@ -126,7 +126,7 @@ class DummyComm:
                     f"gather called on root rank before ranks {uncalled_ranks}"
                 )
             for i, sendbuf in enumerate(gather_buffer):
-                recvbuf[i, :] = sendbuf
+                assign_array_via_cpu(recvbuf[i, :], sendbuf)
 
     def Send(self, sendbuf, dest, **kwargs):
         ensure_contiguous(sendbuf)
