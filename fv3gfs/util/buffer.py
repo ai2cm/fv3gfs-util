@@ -17,16 +17,19 @@ class Buffer:
     """
 
     _key: BufferKey
+    _force_cpu = True
     array: np.ndarray
 
-    def __init__(self, key: BufferKey, array: np.ndarray):
+    def __init__(self, key: BufferKey, array: np.ndarray, force_cpu: bool):
         """Init a cacheable buffer.
 
         Args:
             key: a cache key made out of tuple of allocator (behaving like np.empty), shape and dtype
             array: ndarray of actual data
+            force_cpu: make sure copies & allocation go through central memory
         """
         self._key = key
+        self._force_cpu = force_cpu
         self.array = array
 
     @classmethod
@@ -53,7 +56,7 @@ class Buffer:
                 BUFFER_CACHE[key] = []
             array = allocator(shape, dtype=dtype)  # type: np.ndarray
             assert is_c_contiguous(array)
-            return cls(key, array)
+            return cls(key, array, force_cpu)
 
     @staticmethod
     def push_to_cache(buffer: "Buffer"):
@@ -70,7 +73,10 @@ class Buffer:
         Args:
             destination_array: target ndarray
         """
-        assign_array_via_cpu(destination_array, self.array)
+        if not self._force_cpu:
+            destination_array[:] = self.array
+        else:
+            assign_array_via_cpu(destination_array, self.array)
 
     def assign_from(self, source_array):
         """Assign source_array to internal array.
@@ -78,7 +84,10 @@ class Buffer:
         Args:
             source_array: source ndarray
         """
-        assign_array_via_cpu(self.array, source_array)
+        if not self._force_cpu:
+            self.array[:] = source_array
+        else:
+            assign_array_via_cpu(self.array, source_array)
 
 
 @contextlib.contextmanager
