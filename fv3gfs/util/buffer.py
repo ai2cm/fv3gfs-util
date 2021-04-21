@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, Optional, Dict, Tuple
+from typing import Callable, Iterable, Optional, Dict, Tuple, List
 from ._timing import Timer, NullTimer
 import numpy as np
 import contextlib
@@ -6,7 +6,7 @@ from .utils import is_c_contiguous, assign_array_via_cpu
 from .types import Allocator
 
 BufferKey = Tuple[Callable, Iterable[int], type]
-BUFFER_CACHE: Dict[BufferKey, "Buffer"] = {}
+BUFFER_CACHE: Dict[BufferKey, List["Buffer"]] = {}
 
 
 class Buffer:
@@ -17,10 +17,9 @@ class Buffer:
     """
 
     _key: BufferKey
-    _force_cpu: bool = True
     array: np.ndarray
 
-    def __init__(self, key: BufferKey, array: np.ndarray, force_cpu: bool):
+    def __init__(self, key: BufferKey, array: np.ndarray):
         """Init a cacheable buffer.
 
         Args:
@@ -29,7 +28,6 @@ class Buffer:
         """
         self._key = key
         self.array = array
-        self._force_cpu = force_cpu
 
     @classmethod
     def get_from_cache(
@@ -53,9 +51,9 @@ class Buffer:
         else:
             if key not in BUFFER_CACHE:
                 BUFFER_CACHE[key] = []
-            array = allocator(shape, dtype=dtype)
+            array = allocator(shape, dtype=dtype)  # type: np.ndarray
             assert is_c_contiguous(array)
-            return cls(key, array, force_cpu)
+            return cls(key, array)
 
     @staticmethod
     def push_to_cache(buffer: "Buffer"):
@@ -69,30 +67,18 @@ class Buffer:
     def assign_to(self, destination_array):
         """Assign internal array to destination_array.
 
-        This will proceed to override the assignment when the buffer was created
-        with the force_cpu behavior.
-
         Args:
             destination_array: target ndarray
         """
-        if self._force_cpu:
-            assign_array_via_cpu(destination_array, self.array)
-        else:
-            destination_array[:] = self.array
+        assign_array_via_cpu(destination_array, self.array)
 
     def assign_from(self, source_array):
         """Assign source_array to internal array.
 
-        This will proceed to override the assignment when the buffer was created
-        with the force_cpu behavior.
-
         Args:
             source_array: source ndarray
         """
-        if self._force_cpu:
-            assign_array_via_cpu(self.array, source_array)
-        else:
-            self.array[:] = source_array
+        assign_array_via_cpu(self.array, source_array)
 
 
 @contextlib.contextmanager
@@ -167,6 +153,7 @@ def recv_buffer(
         allocator: a function behaving like numpy.empty
         array: a possibly non-contiguous array for which to provide a buffer
         timer: object to accumulate timings for "unpack"
+        force_cpu: force all communication to go through central memory
 
     Yields:
         buffer_array: if array is non-contiguous, a contiguous buffer array which is

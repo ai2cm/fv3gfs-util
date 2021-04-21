@@ -22,6 +22,6 @@ class NumpyModule(Protocol):
 class AsyncRequest(Protocol):
     """Define the result of an over-the-network capable communication API"""
 
-    def wait():
+    def wait(self):
         """Block the current thread waiting for the request to be completed"""
         ...
