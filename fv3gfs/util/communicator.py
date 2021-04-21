@@ -105,14 +105,14 @@ class Communicator:
         return self.comm.Get_rank()
 
     def _Scatter(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf, False) as send, recv_buffer(
-            numpy.empty, recvbuf, False
+        with send_buffer(numpy.empty, sendbuf, self._force_cpu) as send, recv_buffer(
+            numpy.empty, recvbuf, self._force_cpu
         ) as recv:
             self.comm.Scatter(send, recv, **kwargs)
 
     def _Gather(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf, False) as send, recv_buffer(
-            numpy.empty, recvbuf, False
+        with send_buffer(numpy.empty, sendbuf, self._force_cpu) as send, recv_buffer(
+            numpy.empty, recvbuf, self._force_cpu
         ) as recv:
             self.comm.Gather(send, recv, **kwargs)
 
