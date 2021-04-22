@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, Optional, Dict, Tuple, List
+from typing import Callable, Generator, Iterable, Optional, Dict, Tuple, List
 from ._timing import Timer, NullTimer
 import numpy as np
 import contextlib
@@ -91,7 +91,7 @@ class Buffer:
 @contextlib.contextmanager
 def array_buffer(
     allocator: Allocator, shape: Iterable[int], dtype: type, force_cpu: bool
-) -> Buffer:
+) -> Generator[Buffer, Buffer, None]:
     """
     A context manager providing a contiguous array, which may be re-used between calls.
 
