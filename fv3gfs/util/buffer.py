@@ -46,8 +46,6 @@ class Buffer:
         Return:
             a buffer wrapping an allocated array
         """
-        if force_cpu:
-            allocator = np.empty
         key = (allocator, shape, dtype)
         if key in BUFFER_CACHE and len(BUFFER_CACHE[key]) > 0:
             return BUFFER_CACHE[key].pop()
@@ -93,7 +91,7 @@ class Buffer:
 @contextlib.contextmanager
 def array_buffer(
     allocator: Allocator, shape: Iterable[int], dtype: type, force_cpu: bool
-):
+) -> Buffer:
     """
     A context manager providing a contiguous array, which may be re-used between calls.
 
@@ -108,7 +106,7 @@ def array_buffer(
             May be retained and re-used in subsequent calls.
     """
     buffer = Buffer.get_from_cache(allocator, shape, dtype, force_cpu)
-    yield buffer.array
+    yield buffer
     Buffer.push_to_cache(buffer)
 
 
@@ -118,7 +116,7 @@ def send_buffer(
     array: np.ndarray,
     force_cpu: bool,
     timer: Optional[Timer] = None,
-):
+) -> np.ndarray:
     """A context manager ensuring that `array` is contiguous in a context where it is
     being sent as data, copying into a recycled buffer array if necessary.
 
@@ -138,13 +136,13 @@ def send_buffer(
     else:
         timer.start("pack")
         with array_buffer(allocator, array.shape, array.dtype, force_cpu) as sendbuf:
-            sendbuf[:] = array
+            sendbuf.assign_from(array)
             # this is a little dangerous, because if there is an exception in the two
             # lines above the timer may be started but never stopped. However, it
             # cannot be avoided because we cannot put those two lines in a with or
             # try block without also including the yield line.
             timer.stop("pack")
-            yield sendbuf
+            yield sendbuf.array
 
 
 @contextlib.contextmanager
@@ -153,7 +151,7 @@ def recv_buffer(
     array: np.ndarray,
     force_cpu: bool,
     timer: Optional[Timer] = None,
-):
+) -> np.ndarray:
     """A context manager ensuring that array is contiguous in a context where it is
     being used to receive data, using a recycled buffer array and then copying the
     result into array if necessary.
@@ -176,6 +174,6 @@ def recv_buffer(
         timer.start("unpack")
         with array_buffer(allocator, array.shape, array.dtype, force_cpu) as recvbuf:
             timer.stop("unpack")
-            yield recvbuf
+            yield recvbuf.array
             with timer.clock("unpack"):
-                array[:] = recvbuf
+                recvbuf.assign_to(array)

@@ -155,10 +155,10 @@ class Communicator:
                         global_extent=metadata.extent,
                         overlap=True,
                     )
-                    sendbuf[rank, :] = send_quantity.view[subtile_slice]
+                    sendbuf.array[rank, :] = send_quantity.view[subtile_slice]
                 self._Scatter(
                     metadata.np,
-                    sendbuf,
+                    sendbuf.array,
                     recv_quantity.view[:],
                     root=constants.ROOT_RANK,
                 )
@@ -218,7 +218,7 @@ class Communicator:
                 self._Gather(
                     send_quantity.np,
                     send_quantity.view[:],
-                    recvbuf,
+                    recvbuf.array,
                     root=constants.ROOT_RANK,
                 )
                 if recv_quantity is None:
@@ -235,7 +235,7 @@ class Communicator:
                         global_extent=recv_quantity.extent,
                         overlap=True,
                     )
-                    recv_quantity.view[to_slice] = recvbuf[rank, :]
+                    recv_quantity.view[to_slice] = recvbuf.array[rank, :]
                 result = recv_quantity
         else:
             self._Gather(
@@ -709,7 +709,7 @@ class CubedSphereCommunicator(Communicator):
         # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
             buffer = Buffer.get_from_cache(
-                numpy, in_array.shape, in_array.dtype, self._force_cpu
+                numpy.empty, in_array.shape, in_array.dtype, self._force_cpu
             )
             buffer.array = numpy.ascontiguousarray(in_array)
         with self.timer.clock("Isend"):
@@ -733,7 +733,7 @@ class CubedSphereCommunicator(Communicator):
         # Prepare a contiguous buffer to receive data
         with self.timer.clock("Irecv"):
             buffer = Buffer.get_from_cache(
-                numpy, out_array.shape, out_array.dtype, self._force_cpu
+                numpy.empty, out_array.shape, out_array.dtype, self._force_cpu
             )
             recv_request = self.comm.Irecv(buffer.array, **kwargs)
         return (recv_request, buffer, out_array)
