@@ -1,4 +1,4 @@
-from typing import Tuple, Mapping, Optional, Sequence, cast, List, Union, Any
+from typing import Tuple, Mapping, Optional, Sequence, cast, List
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
@@ -51,9 +51,6 @@ HaloRequestRecvList = List[HaloRecvTuple]
 
 class HaloUpdateRequest:
     """Asynchronous request object for halo updates."""
-
-    _send_data = Union[HaloRequestSendList, List[Any]]
-    _recv_data = Union[HaloRequestRecvList, List[Any]]
 
     def __init__(
         self,
