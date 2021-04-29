@@ -72,3 +72,9 @@ def assign_array_via_cpu(
         to_array[:] = cp.asnumpy(from_array)
     else:
         to_array[:] = from_array
+
+
+def device_synchronize(array: Union[np.ndarray, Storage]):
+    """Synchronize all memory communication"""
+    if cp and isinstance(array, cp.ndarray):
+        cp.cuda.runtime.deviceSynchronize()

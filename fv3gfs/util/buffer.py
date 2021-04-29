@@ -2,7 +2,7 @@ from typing import Callable, Generator, Iterable, Optional, Dict, Tuple, List
 from ._timing import Timer, NullTimer
 import numpy as np
 import contextlib
-from .utils import is_c_contiguous, assign_array_via_cpu
+from .utils import is_c_contiguous, assign_array_via_cpu, device_synchronize
 from .types import Allocator
 
 BufferKey = Tuple[Callable, Iterable[int], type]
@@ -64,6 +64,10 @@ class Buffer:
             buffer: buffer to push back in cache, using internal key
         """
         BUFFER_CACHE[buffer._key].append(buffer)
+
+    def finalize_memory_tranfer(self):
+        """Finalize any memory transfer"""
+        device_synchronize(self.array)
 
     def assign_to(self, destination_array):
         """Assign internal array to destination_array.
