@@ -709,7 +709,7 @@ class CubedSphereCommunicator(Communicator):
                 numpy.empty, in_array.shape, in_array.dtype, self._force_cpu
             )
             buffer.array = numpy.ascontiguousarray(in_array)
-            buffer.finalize_memory_tranfer()
+            buffer.finalize_memory_transfer()
         with self.timer.clock("Isend"):
             request = self.comm.Isend(buffer.array, **kwargs)
         return (request, buffer)

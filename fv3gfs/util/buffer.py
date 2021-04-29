@@ -65,7 +65,7 @@ class Buffer:
         """
         BUFFER_CACHE[buffer._key].append(buffer)
 
-    def finalize_memory_tranfer(self):
+    def finalize_memory_transfer(self):
         """Finalize any memory transfer"""
         device_synchronize(self.array)
 
