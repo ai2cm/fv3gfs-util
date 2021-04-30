@@ -395,6 +395,11 @@ def test_depth_halo_update(
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
 def test_halo_update_gpu_only(backend, gpu_communicators):
+    if cp is None:
+        pytest.skip("Cupy is required")
+    if np is None:
+        pytest.skip("Numpy is required")
+
     # Switch empty() call with wrapped version that
     # counts how many call are made
     np_original = np.empty
