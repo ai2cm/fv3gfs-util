@@ -2,8 +2,16 @@ import pytest
 import fv3gfs.util
 import functools
 import copy
-import numpy as np
-import cupy as cp
+
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    np = None
+
+try:
+    import cupy as cp
+except ModuleNotFoundError:
+    cp = None
 
 
 @pytest.fixture
