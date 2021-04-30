@@ -143,8 +143,7 @@ def get_quantity(dims, units, extent, n_halo, numpy):
     )
 
 
-# @pytest.mark.parametrize("backend", ["gt4py_numpy", "gt4py_cupy"], indirect=True)
-@pytest.mark.parametrize("backend", ["gt4py_numpy"], indirect=True)
+@pytest.mark.parametrize("backend", ["gt4py_numpy", "gt4py_cupy"], indirect=True)
 @pytest.mark.parametrize("dims, layout", [["x,y,z", (2, 2)]], indirect=True)
 def test_gathered_quantity_has_storage(
     tile_quantity, scattered_quantities, communicator_list, time, backend
@@ -160,8 +159,7 @@ def test_gathered_quantity_has_storage(
             assert result is None
 
 
-# @pytest.mark.parametrize("backend", ["gt4py_numpy", "gt4py_cupy"], indirect=True)
-@pytest.mark.parametrize("backend", ["gt4py_numpy"], indirect=True)
+@pytest.mark.parametrize("backend", ["gt4py_numpy", "gt4py_cupy"], indirect=True)
 @pytest.mark.parametrize("dims, layout", [["x,y,z", (2, 2)]], indirect=True)
 def test_scattered_quantity_has_storage(
     tile_quantity, communicator_list, time, backend

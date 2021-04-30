@@ -1,6 +1,9 @@
 import pytest
 import fv3gfs.util
+import functools
 import copy
+import numpy as np
+import cupy as cp
 
 
 @pytest.fixture
@@ -174,6 +177,24 @@ def communicator_list(cube_partitioner):
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
                 partitioner=cube_partitioner,
+                timer=fv3gfs.util.Timer(),
+            )
+        )
+    return return_list
+
+
+@pytest.fixture
+def gpu_communicators(cube_partitioner):
+    shared_buffer = {}
+    return_list = []
+    for rank in range(cube_partitioner.total_ranks):
+        return_list.append(
+            fv3gfs.util.CubedSphereCommunicator(
+                comm=fv3gfs.util.testing.DummyComm(
+                    rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
+                ),
+                partitioner=cube_partitioner,
+                force_cpu=False,
                 timer=fv3gfs.util.Timer(),
             )
         )
@@ -362,6 +383,67 @@ def test_depth_halo_update(
                         assert numpy.all(quantity.sel(**{dim: extent + 2}) <= 3)
                     if n_points_update > 3:
                         raise NotImplementedError(n_points_update)
+
+
+@pytest.mark.parametrize("backend", ["gtcuda"])
+def test_halo_update_gpu_only(backend, gpu_communicators):
+    # Switch empty() call with wrapped version that
+    # counts how many call are made
+    np_original = np.empty
+    cp_original = cp.empty
+    global np_n_calls
+    np_n_calls = 0
+    global cp_n_calls
+    cp_n_calls = 0
+
+    def np_count_calls(func):
+        """Count np.empty call"""
+
+        @functools.wraps(func)
+        def np_wrapped(*args, **kwargs):
+            global np_n_calls
+            np_n_calls += 1
+            return func(*args, **kwargs)
+
+        return np_wrapped
+
+    def cp_count_calls(func):
+        """Count cp.empty call"""
+
+        @functools.wraps(func)
+        def cp_wrapped(*args, **kwargs):
+            global cp_n_calls
+            cp_n_calls += 1
+            return func(*args, **kwargs)
+
+        return cp_wrapped
+
+    try:
+        # Using the above, do an halo exchange
+        np.empty = np_count_calls(np.empty)
+        cp.empty = cp_count_calls(cp.empty)
+
+        sizer = fv3gfs.util.SubtileGridSizer(
+            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
+        )
+        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
+        quantity = quantity_factory.empty(
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
+        )
+
+        req_list = []
+        for communicator in gpu_communicators:
+            req = communicator.start_halo_update(quantity, 3)
+            req_list.append(req)
+        for req in req_list:
+            req.wait()
+
+    finally:
+        # We expect no np calls and several cp calls
+        np.empty = np_original
+        cp.empty = cp_original
+        assert np_n_calls == 0
+        assert cp_n_calls > 9
 
 
 @pytest.fixture

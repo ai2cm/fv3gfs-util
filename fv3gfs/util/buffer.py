@@ -17,24 +17,21 @@ class Buffer:
     """
 
     _key: BufferKey
-    _force_cpu = True
     array: np.ndarray
 
-    def __init__(self, key: BufferKey, array: np.ndarray, force_cpu: bool):
+    def __init__(self, key: BufferKey, array: np.ndarray):
         """Init a cacheable buffer.
 
         Args:
             key: a cache key made out of tuple of allocator (behaving like np.empty), shape and dtype
             array: ndarray of actual data
-            force_cpu: make sure copies & allocation go through central memory
         """
         self._key = key
-        self._force_cpu = force_cpu
         self.array = array
 
     @classmethod
     def get_from_cache(
-        cls, allocator: Allocator, shape: Iterable[int], dtype: type, force_cpu: bool
+        cls, allocator: Allocator, shape: Iterable[int], dtype: type
     ) -> "Buffer":
         """Retrieve or insert then retrieve of buffer from cache.
 
@@ -42,7 +39,6 @@ class Buffer:
             allocator: behaves like a np.empty function, used to allocate memory
             shape: shape of array
             dtype: type of array elements
-            force_cpu: allocate only CPU
         Return:
             a buffer wrapping an allocated array
         """
@@ -54,7 +50,7 @@ class Buffer:
                 BUFFER_CACHE[key] = []
             array = allocator(shape, dtype=dtype)  # type: np.ndarray
             assert is_c_contiguous(array)
-            return cls(key, array, force_cpu)
+            return cls(key, array)
 
     @staticmethod
     def push_to_cache(buffer: "Buffer"):
@@ -75,10 +71,21 @@ class Buffer:
         Args:
             destination_array: target ndarray
         """
-        if not self._force_cpu:
+        try:
             destination_array[:] = self.array
-        else:
+        except ValueError:
             assign_array_via_cpu(destination_array, self.array)
+
+    def assign_row_to(self, destination_array, row):
+        """Assign given row of the internal array to the destination_array.
+
+        Args:
+            destination_array: target ndarray
+        """
+        try:
+            destination_array[:] = self.array[row, :]
+        except ValueError:
+            assign_array_via_cpu(destination_array, self.array[row, :])
 
     def assign_from(self, source_array):
         """Assign source_array to internal array.
@@ -86,15 +93,41 @@ class Buffer:
         Args:
             source_array: source ndarray
         """
-        if not self._force_cpu:
+        try:
             self.array[:] = source_array
-        else:
+        except TypeError:
             assign_array_via_cpu(self.array, source_array)
+
+    def assign_row_from(self, source_array, row):
+        """Assign source_array to the given row of the internal array.
+
+        Args:
+            source_array: source ndarray
+            row: index of the row to assign to
+        """
+        try:
+            self.array[row, :] = source_array
+        except TypeError:
+            assign_array_via_cpu(
+                self.array[row, :], source_array,
+            )
+
+    def assign_from_as_contiguous(self, source_array, numpy_module):
+        """Assign a contiguous copy of the source_array to the internal array.
+
+        Args:
+            source_array: source ndarray
+            numpy_module: module to call ascontiguousarray from
+        """
+        try:
+            self.array[:] = numpy_module.ascontiguousarray(source_array)
+        except TypeError:
+            self.array[:] = numpy_module.ascontiguousarray(source_array.get())
 
 
 @contextlib.contextmanager
 def array_buffer(
-    allocator: Allocator, shape: Iterable[int], dtype: type, force_cpu: bool
+    allocator: Allocator, shape: Iterable[int], dtype: type
 ) -> Generator[Buffer, Buffer, None]:
     """
     A context manager providing a contiguous array, which may be re-used between calls.
@@ -109,17 +142,14 @@ def array_buffer(
         buffer_array: an ndarray created according to the specification in the args.
             May be retained and re-used in subsequent calls.
     """
-    buffer = Buffer.get_from_cache(allocator, shape, dtype, force_cpu)
+    buffer = Buffer.get_from_cache(allocator, shape, dtype)
     yield buffer
     Buffer.push_to_cache(buffer)
 
 
 @contextlib.contextmanager
 def send_buffer(
-    allocator: Callable,
-    array: np.ndarray,
-    force_cpu: bool,
-    timer: Optional[Timer] = None,
+    allocator: Callable, array: np.ndarray, timer: Optional[Timer] = None,
 ) -> np.ndarray:
     """A context manager ensuring that `array` is contiguous in a context where it is
     being sent as data, copying into a recycled buffer array if necessary.
@@ -139,7 +169,7 @@ def send_buffer(
         yield array
     else:
         timer.start("pack")
-        with array_buffer(allocator, array.shape, array.dtype, force_cpu) as sendbuf:
+        with array_buffer(allocator, array.shape, array.dtype) as sendbuf:
             sendbuf.assign_from(array)
             # this is a little dangerous, because if there is an exception in the two
             # lines above the timer may be started but never stopped. However, it
@@ -151,10 +181,7 @@ def send_buffer(
 
 @contextlib.contextmanager
 def recv_buffer(
-    allocator: Callable,
-    array: np.ndarray,
-    force_cpu: bool,
-    timer: Optional[Timer] = None,
+    allocator: Callable, array: np.ndarray, timer: Optional[Timer] = None,
 ) -> np.ndarray:
     """A context manager ensuring that array is contiguous in a context where it is
     being used to receive data, using a recycled buffer array and then copying the
@@ -164,7 +191,6 @@ def recv_buffer(
         allocator: a function behaving like numpy.empty
         array: a possibly non-contiguous array for which to provide a buffer
         timer: object to accumulate timings for "unpack"
-        force_cpu: force all communication to go through central memory
 
     Yields:
         buffer_array: if array is non-contiguous, a contiguous buffer array which is
@@ -176,7 +202,7 @@ def recv_buffer(
         yield array
     else:
         timer.start("unpack")
-        with array_buffer(allocator, array.shape, array.dtype, force_cpu) as recvbuf:
+        with array_buffer(allocator, array.shape, array.dtype) as recvbuf:
             timer.stop("unpack")
             yield recvbuf.array
             with timer.clock("unpack"):

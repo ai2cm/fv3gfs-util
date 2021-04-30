@@ -39,25 +39,14 @@ def test_not_is_c_contiguous(non_contiguous_array):
 
 
 def test_sendbuf_uses_buffer(numpy, backend, allocator, non_contiguous_array):
-    with send_buffer(allocator, non_contiguous_array, True) as sendbuf:
-        assert sendbuf is not non_contiguous_array
-        assert sendbuf.data is not non_contiguous_array.data
-        numpy.testing.assert_array_equal(sendbuf, non_contiguous_array)
-    with send_buffer(allocator, non_contiguous_array, False) as sendbuf:
+    with send_buffer(allocator, non_contiguous_array) as sendbuf:
         assert sendbuf is not non_contiguous_array
         assert sendbuf.data is not non_contiguous_array.data
         numpy.testing.assert_array_equal(sendbuf, non_contiguous_array)
 
 
 def test_recvbuf_uses_buffer(numpy, allocator, non_contiguous_array):
-    with recv_buffer(allocator, non_contiguous_array, True) as recvbuf:
-        assert recvbuf is not non_contiguous_array
-        assert recvbuf.data is not non_contiguous_array.data
-        recvbuf[:] = 0.0
-        assert not numpy.all(non_contiguous_array == 0.0)
-    assert numpy.all(non_contiguous_array == 0.0)
-    non_contiguous_array.fill(1)
-    with recv_buffer(allocator, non_contiguous_array, False) as recvbuf:
+    with recv_buffer(allocator, non_contiguous_array) as recvbuf:
         assert recvbuf is not non_contiguous_array
         assert recvbuf.data is not non_contiguous_array.data
         recvbuf[:] = 0.0
@@ -66,14 +55,10 @@ def test_recvbuf_uses_buffer(numpy, allocator, non_contiguous_array):
 
 
 def test_sendbuf_no_buffer(allocator, contiguous_array):
-    with send_buffer(allocator, contiguous_array, True) as sendbuf:
-        assert sendbuf is contiguous_array
-    with send_buffer(allocator, contiguous_array, False) as sendbuf:
+    with send_buffer(allocator, contiguous_array) as sendbuf:
         assert sendbuf is contiguous_array
 
 
 def test_recvbuf_no_buffer(allocator, contiguous_array):
-    with recv_buffer(allocator, contiguous_array, True) as recvbuf:
-        assert recvbuf is contiguous_array
-    with recv_buffer(allocator, contiguous_array, False) as recvbuf:
+    with recv_buffer(allocator, contiguous_array) as recvbuf:
         assert recvbuf is contiguous_array

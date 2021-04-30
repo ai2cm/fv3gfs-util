@@ -6,9 +6,9 @@ from .boundary import Boundary
 from .rotate import rotate_scalar_data, rotate_vector_data
 from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._timing import Timer, NullTimer
-from .types import AsyncRequest
+from .types import AsyncRequest, NumpyModule
 import logging
-from numpy import ndarray
+import numpy as np
 
 __all__ = [
     "TileCommunicator",
@@ -45,7 +45,7 @@ class FunctionRequest:
 
 HaloSendTuple = Tuple[AsyncRequest, "Buffer"]
 HaloRequestSendList = List[HaloSendTuple]
-HaloRecvTuple = Tuple[AsyncRequest, "Buffer", ndarray]
+HaloRecvTuple = Tuple[AsyncRequest, "Buffer", np.ndarray]
 HaloRequestRecvList = List[HaloRecvTuple]
 
 
@@ -101,15 +101,21 @@ class Communicator:
         """rank of the current process within this communicator"""
         return self.comm.Get_rank()
 
-    def _Scatter(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf, self._force_cpu) as send, recv_buffer(
-            numpy.empty, recvbuf, self._force_cpu
+    def _get_numpy_module(self, quantity: Quantity) -> NumpyModule:
+        """Get a numpy-like module depending on configuration and Quantity original allocator"""
+        if self._force_cpu:
+            return np
+        return quantity.np
+
+    def _Scatter(self, numpy_module, sendbuf, recvbuf, **kwargs):
+        with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
+            numpy_module.empty, recvbuf
         ) as recv:
             self.comm.Scatter(send, recv, **kwargs)
 
-    def _Gather(self, numpy, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy.empty, sendbuf, self._force_cpu) as send, recv_buffer(
-            numpy.empty, recvbuf, self._force_cpu
+    def _Gather(self, numpy_module, sendbuf, recvbuf, **kwargs):
+        with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
+            numpy_module.empty, recvbuf
         ) as recv:
             self.comm.Gather(send, recv, **kwargs)
 
@@ -140,10 +146,9 @@ class Communicator:
         if self.rank == constants.ROOT_RANK:
             send_quantity = cast(Quantity, send_quantity)
             with array_buffer(
-                metadata.np.empty,
+                self._get_numpy_module(metadata).empty,
                 (self.partitioner.total_ranks,) + shape,
                 dtype=metadata.dtype,
-                force_cpu=self._force_cpu,
             ) as sendbuf:
                 for rank in range(0, self.partitioner.total_ranks):
                     subtile_slice = self.partitioner.subtile_slice(
@@ -152,7 +157,7 @@ class Communicator:
                         global_extent=metadata.extent,
                         overlap=True,
                     )
-                    sendbuf.array[rank, :] = send_quantity.view[subtile_slice]
+                    sendbuf.assign_row_from(send_quantity.view[subtile_slice], rank)
                 self._Scatter(
                     metadata.np,
                     sendbuf.array,
@@ -161,7 +166,7 @@ class Communicator:
                 )
         else:
             self._Scatter(
-                metadata.np, None, recv_quantity.view[:], root=constants.ROOT_RANK
+                metadata.np, None, recv_quantity.view[:], root=constants.ROOT_RANK,
             )
         return recv_quantity
 
@@ -210,7 +215,6 @@ class Communicator:
                 send_quantity.np.empty,
                 (self.partitioner.total_ranks,) + tuple(send_quantity.extent),
                 dtype=send_quantity.data.dtype,
-                force_cpu=self._force_cpu,
             ) as recvbuf:
                 self._Gather(
                     send_quantity.np,
@@ -232,7 +236,7 @@ class Communicator:
                         global_extent=recv_quantity.extent,
                         overlap=True,
                     )
-                    recv_quantity.view[to_slice] = recvbuf.array[rank, :]
+                    recvbuf.assign_row_to(recv_quantity.view[to_slice], rank)
                 result = recv_quantity
         else:
             self._Gather(
@@ -477,7 +481,12 @@ class CubedSphereCommunicator(Communicator):
                     -boundary.n_clockwise_rotations,
                 )
             send_data.append(
-                self._Isend(quantity.np, source_view[:], dest=boundary.to_rank, tag=tag)
+                self._Isend(
+                    self._get_numpy_module(quantity),
+                    source_view,
+                    dest=boundary.to_rank,
+                    tag=tag,
+                )
             )
         return send_data
 
@@ -496,7 +505,12 @@ class CubedSphereCommunicator(Communicator):
                     self.rank,
                 )
             recv_data.append(
-                self._Irecv(quantity.np, dest_view, source=boundary.to_rank, tag=tag)
+                self._Irecv(
+                    self._get_numpy_module(quantity),
+                    dest_view,
+                    source=boundary.to_rank,
+                    tag=tag,
+                )
             )
         return recv_data
 
@@ -591,10 +605,12 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
-        send_data = self._Isend_vector_halos(
+        send_data: HaloRequestSendList = self._Isend_vector_halos(
             x_quantity, y_quantity, n_points, tags=(tag1, tag2)
         )
-        recv_data = self._Irecv_halos(x_quantity, n_points, tag=tag1)
+        recv_data: HaloRequestRecvList = self._Irecv_halos(
+            x_quantity, n_points, tag=tag1
+        )
         recv_data.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
         return HaloUpdateRequest(send_data, recv_data, self.timer)
 
@@ -623,10 +639,20 @@ class CubedSphereCommunicator(Communicator):
                     y_data.shape,
                 )
             send_data.append(
-                self._Isend(x_quantity.np, x_data, dest=boundary.to_rank, tag=tags[0])
+                self._Isend(
+                    self._get_numpy_module(x_quantity),
+                    x_data,
+                    dest=boundary.to_rank,
+                    tag=tags[0],
+                )
             )
             send_data.append(
-                self._Isend(y_quantity.np, y_data, dest=boundary.to_rank, tag=tags[1])
+                self._Isend(
+                    self._get_numpy_module(y_quantity),
+                    y_data,
+                    dest=boundary.to_rank,
+                    tag=tags[1],
+                )
             )
         return send_data
 
@@ -669,9 +695,17 @@ class CubedSphereCommunicator(Communicator):
             west_data = -west_data
         send_requests = [
             self._Isend(
-                x_quantity.np, south_data, dest=south_boundary.to_rank, tag=tag
+                self._get_numpy_module(x_quantity),
+                south_data,
+                dest=south_boundary.to_rank,
+                tag=tag,
             ),
-            self._Isend(y_quantity.np, west_data, dest=west_boundary.to_rank, tag=tag),
+            self._Isend(
+                self._get_numpy_module(y_quantity),
+                west_data,
+                dest=west_boundary.to_rank,
+                tag=tag,
+            ),
         ]
         return send_requests
 
@@ -697,41 +731,45 @@ class CubedSphereCommunicator(Communicator):
             }
         )
         recv_requests = [
-            self._Irecv(x_quantity.np, north_data, source=north_rank, tag=tag),
-            self._Irecv(y_quantity.np, east_data, source=east_rank, tag=tag),
+            self._Irecv(
+                self._get_numpy_module(x_quantity),
+                north_data,
+                source=north_rank,
+                tag=tag,
+            ),
+            self._Irecv(
+                self._get_numpy_module(y_quantity), east_data, source=east_rank, tag=tag
+            ),
         ]
         return recv_requests
 
-    def _Isend(self, numpy, in_array, **kwargs) -> HaloSendTuple:
+    def _Isend(self, numpy_module, in_array, **kwargs) -> HaloSendTuple:
         # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
             buffer = Buffer.get_from_cache(
-                numpy.empty, in_array.shape, in_array.dtype, self._force_cpu
+                numpy_module.empty, in_array.shape, in_array.dtype
             )
-            buffer.array = numpy.ascontiguousarray(in_array)
+            print(f"{type(in_array)} {numpy_module}")
+            buffer.assign_from_as_contiguous(in_array, numpy_module)
             buffer.finalize_memory_transfer()
         with self.timer.clock("Isend"):
             request = self.comm.Isend(buffer.array, **kwargs)
         return (request, buffer)
 
-    def _Send(self, numpy, in_array, **kwargs):
-        with send_buffer(
-            numpy.empty, in_array, self._force_cpu, timer=self.timer
-        ) as sendbuf:
+    def _Send(self, numpy_module, in_array, **kwargs):
+        with send_buffer(numpy_module.empty, in_array, timer=self.timer) as sendbuf:
             self.comm.Send(sendbuf, **kwargs)
 
-    def _Recv(self, numpy, out_array, **kwargs):
-        with recv_buffer(
-            numpy.empty, out_array, self._force_cpu, timer=self.timer
-        ) as recvbuf:
+    def _Recv(self, numpy_module, out_array, **kwargs):
+        with recv_buffer(numpy_module.empty, out_array, timer=self.timer) as recvbuf:
             with self.timer.clock("Recv"):
                 self.comm.Recv(recvbuf, **kwargs)
 
-    def _Irecv(self, numpy, out_array, **kwargs) -> HaloRecvTuple:
+    def _Irecv(self, numpy_module, out_array, **kwargs) -> HaloRecvTuple:
         # Prepare a contiguous buffer to receive data
         with self.timer.clock("Irecv"):
             buffer = Buffer.get_from_cache(
-                numpy.empty, out_array.shape, out_array.dtype, self._force_cpu
+                numpy_module.empty, out_array.shape, out_array.dtype
             )
             recv_request = self.comm.Irecv(buffer.array, **kwargs)
         return (recv_request, buffer, out_array)
