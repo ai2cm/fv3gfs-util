@@ -1,5 +1,5 @@
 import pytest
-from fv3gfs.util.buffer import send_buffer, recv_buffer
+from fv3gfs.util.buffer import send_buffer, recv_buffer, Buffer, BUFFER_CACHE
 from fv3gfs.util.utils import is_contiguous, is_c_contiguous
 
 
@@ -62,3 +62,42 @@ def test_sendbuf_no_buffer(allocator, contiguous_array):
 def test_recvbuf_no_buffer(allocator, contiguous_array):
     with recv_buffer(allocator, contiguous_array) as recvbuf:
         assert recvbuf is contiguous_array
+
+
+def test_buffer_cache_appends(allocator, backend):
+    """Test buffer with the same key are appended while not in use for potential reuse"""
+    if backend == "gt4py_cupy":
+        pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
+    BUFFER_CACHE.clear()
+    assert len(BUFFER_CACHE) == 0
+    shape = (10, 10, 10)
+    b0_0 = Buffer.get_from_cache(allocator, shape, float)
+    b0_0.array.fill(42)
+    assert len(BUFFER_CACHE) == 1
+    b0_1 = Buffer.get_from_cache(allocator, shape, float)
+    b0_1.array.fill(23)
+    assert b0_0._key == b0_1._key
+    assert (b0_0.array != b0_1.array).all()
+    assert len(BUFFER_CACHE) == 1
+    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 0
+    Buffer.push_to_cache(b0_0)
+    Buffer.push_to_cache(b0_1)
+    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 2
+
+
+def test_buffer_reuse(allocator, backend):
+    """Test we reuse the buffer when available instead of reallocating one"""
+    if backend == "gt4py_cupy":
+        pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
+    BUFFER_CACHE.clear()
+    assert len(BUFFER_CACHE) == 0
+    shape = (10, 10, 10)
+    b0 = Buffer.get_from_cache(allocator, shape, float)
+    fill_scalar = 42
+    b0.array.fill(fill_scalar)
+    assert len(BUFFER_CACHE) == 1
+    Buffer.push_to_cache(b0)
+    assert len(BUFFER_CACHE) == 1
+    b1 = Buffer.get_from_cache(allocator, shape, float)
+    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 0
+    assert (b1.array == fill_scalar).all()
