@@ -101,11 +101,11 @@ class Communicator:
         """rank of the current process within this communicator"""
         return self.comm.Get_rank()
 
-    def _get_numpy_module(self, quantity: Quantity) -> NumpyModule:
+    def _maybe_force_cpu(self, module: NumpyModule) -> NumpyModule:
         """Get a numpy-like module depending on configuration and Quantity original allocator"""
         if self._force_cpu:
             return np
-        return quantity.np
+        return module
 
     def _Scatter(self, numpy_module, sendbuf, recvbuf, **kwargs):
         with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
@@ -146,7 +146,7 @@ class Communicator:
         if self.rank == constants.ROOT_RANK:
             send_quantity = cast(Quantity, send_quantity)
             with array_buffer(
-                self._get_numpy_module(metadata).empty,
+                self._maybe_force_cpu(metadata.np).empty,
                 (self.partitioner.total_ranks,) + shape,
                 dtype=metadata.dtype,
             ) as sendbuf:
@@ -157,7 +157,10 @@ class Communicator:
                         global_extent=metadata.extent,
                         overlap=True,
                     )
-                    sendbuf.assign_row_from(send_quantity.view[subtile_slice], rank)
+                    sendbuf.assign_from(
+                        send_quantity.view[subtile_slice],
+                        buffer_slice=np.index_exp[rank, :],
+                    )
                 self._Scatter(
                     metadata.np,
                     sendbuf.array,
@@ -236,7 +239,9 @@ class Communicator:
                         global_extent=recv_quantity.extent,
                         overlap=True,
                     )
-                    recvbuf.assign_row_to(recv_quantity.view[to_slice], rank)
+                    recvbuf.assign_to(
+                        recv_quantity.view[to_slice], buffer_slice=np.index_exp[rank, :]
+                    )
                 result = recv_quantity
         else:
             self._Gather(
@@ -482,7 +487,7 @@ class CubedSphereCommunicator(Communicator):
                 )
             send_data.append(
                 self._Isend(
-                    self._get_numpy_module(quantity),
+                    self._maybe_force_cpu(quantity.np),
                     source_view,
                     dest=boundary.to_rank,
                     tag=tag,
@@ -506,7 +511,7 @@ class CubedSphereCommunicator(Communicator):
                 )
             recv_data.append(
                 self._Irecv(
-                    self._get_numpy_module(quantity),
+                    self._maybe_force_cpu(quantity.np),
                     dest_view,
                     source=boundary.to_rank,
                     tag=tag,
@@ -640,7 +645,7 @@ class CubedSphereCommunicator(Communicator):
                 )
             send_data.append(
                 self._Isend(
-                    self._get_numpy_module(x_quantity),
+                    self._maybe_force_cpu(x_quantity.np),
                     x_data,
                     dest=boundary.to_rank,
                     tag=tags[0],
@@ -648,7 +653,7 @@ class CubedSphereCommunicator(Communicator):
             )
             send_data.append(
                 self._Isend(
-                    self._get_numpy_module(y_quantity),
+                    self._maybe_force_cpu(y_quantity.np),
                     y_data,
                     dest=boundary.to_rank,
                     tag=tags[1],
@@ -695,13 +700,13 @@ class CubedSphereCommunicator(Communicator):
             west_data = -west_data
         send_requests = [
             self._Isend(
-                self._get_numpy_module(x_quantity),
+                self._maybe_force_cpu(x_quantity.np),
                 south_data,
                 dest=south_boundary.to_rank,
                 tag=tag,
             ),
             self._Isend(
-                self._get_numpy_module(y_quantity),
+                self._maybe_force_cpu(y_quantity.np),
                 west_data,
                 dest=west_boundary.to_rank,
                 tag=tag,
@@ -732,13 +737,16 @@ class CubedSphereCommunicator(Communicator):
         )
         recv_requests = [
             self._Irecv(
-                self._get_numpy_module(x_quantity),
+                self._maybe_force_cpu(x_quantity.np),
                 north_data,
                 source=north_rank,
                 tag=tag,
             ),
             self._Irecv(
-                self._get_numpy_module(y_quantity), east_data, source=east_rank, tag=tag
+                self._maybe_force_cpu(y_quantity.np),
+                east_data,
+                source=east_rank,
+                tag=tag,
             ),
         ]
         return recv_requests
@@ -749,8 +757,7 @@ class CubedSphereCommunicator(Communicator):
             buffer = Buffer.get_from_cache(
                 numpy_module.empty, in_array.shape, in_array.dtype
             )
-            print(f"{type(in_array)} {numpy_module}")
-            buffer.assign_from_as_contiguous(in_array, numpy_module)
+            buffer.assign_from(in_array)
             buffer.finalize_memory_transfer()
         with self.timer.clock("Isend"):
             request = self.comm.Isend(buffer.array, **kwargs)

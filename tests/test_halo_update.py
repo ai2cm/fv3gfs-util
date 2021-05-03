@@ -2,11 +2,7 @@ import pytest
 import fv3gfs.util
 import functools
 import copy
-
-try:
-    import numpy as np
-except ModuleNotFoundError:
-    np = None
+import numpy as np
 
 try:
     import cupy as cp

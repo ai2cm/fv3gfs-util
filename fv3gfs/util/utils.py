@@ -57,21 +57,24 @@ def ensure_contiguous(maybe_array: Union[np.ndarray, Storage]) -> None:
         raise ValueError("ndarray is not contiguous")
 
 
-def assign_array_via_cpu(
+def safe_assign_array(
     to_array: Union[np.ndarray, Storage], from_array: Union[np.ndarray, Storage]
 ):
-    """Assign to/from a CPU array, downloading/uploading from GPU if need be.
+    """Failproof assignment for array on different devices.
+    
+    The memory will be downloaded/uploaded from GPU if need be.
 
     Args:
         to_array: destination ndarray
         from_array: source ndarray
     """
-    if cp and isinstance(to_array, cp.ndarray):
-        to_array[:] = cp.asarray(from_array)
-    elif cp and isinstance(from_array, cp.ndarray):
-        to_array[:] = cp.asnumpy(from_array)
-    else:
+    try:
         to_array[:] = from_array
+    except (ValueError, TypeError):
+        if cp and isinstance(to_array, cp.ndarray):
+            to_array[:] = cp.asarray(from_array)
+        elif cp and isinstance(from_array, cp.ndarray):
+            to_array[:] = cp.asnumpy(from_array)
 
 
 def device_synchronize(array: Union[np.ndarray, Storage]):

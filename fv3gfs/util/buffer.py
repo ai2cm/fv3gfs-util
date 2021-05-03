@@ -1,8 +1,9 @@
 from typing import Callable, Generator, Iterable, Optional, Dict, Tuple, List
 from ._timing import Timer, NullTimer
 import numpy as np
+from numpy.lib.index_tricks import IndexExpression
 import contextlib
-from .utils import is_c_contiguous, assign_array_via_cpu, device_synchronize
+from .utils import is_c_contiguous, safe_assign_array, device_synchronize
 from .types import Allocator
 
 BufferKey = Tuple[Callable, Iterable[int], type]
@@ -65,64 +66,27 @@ class Buffer:
         """Finalize any memory transfer"""
         device_synchronize(self.array)
 
-    def assign_to(self, destination_array):
+    def assign_to(
+        self,
+        destination_array: np.ndarray,
+        buffer_slice: IndexExpression = np.index_exp[:],
+    ):
         """Assign internal array to destination_array.
 
         Args:
             destination_array: target ndarray
         """
-        try:
-            destination_array[:] = self.array
-        except ValueError:
-            assign_array_via_cpu(destination_array, self.array)
+        safe_assign_array(destination_array, self.array[buffer_slice])
 
-    def assign_row_to(self, destination_array, row):
-        """Assign given row of the internal array to the destination_array.
-
-        Args:
-            destination_array: target ndarray
-        """
-        try:
-            destination_array[:] = self.array[row, :]
-        except ValueError:
-            assign_array_via_cpu(destination_array, self.array[row, :])
-
-    def assign_from(self, source_array):
+    def assign_from(
+        self, source_array: np.ndarray, buffer_slice: IndexExpression = np.index_exp[:]
+    ):
         """Assign source_array to internal array.
 
         Args:
             source_array: source ndarray
         """
-        try:
-            self.array[:] = source_array
-        except TypeError:
-            assign_array_via_cpu(self.array, source_array)
-
-    def assign_row_from(self, source_array, row):
-        """Assign source_array to the given row of the internal array.
-
-        Args:
-            source_array: source ndarray
-            row: index of the row to assign to
-        """
-        try:
-            self.array[row, :] = source_array
-        except TypeError:
-            assign_array_via_cpu(
-                self.array[row, :], source_array,
-            )
-
-    def assign_from_as_contiguous(self, source_array, numpy_module):
-        """Assign a contiguous copy of the source_array to the internal array.
-
-        Args:
-            source_array: source ndarray
-            numpy_module: module to call ascontiguousarray from
-        """
-        try:
-            self.array[:] = numpy_module.ascontiguousarray(source_array)
-        except TypeError:
-            self.array[:] = numpy_module.ascontiguousarray(source_array.get())
+        safe_assign_array(self.array[buffer_slice], source_array)
 
 
 @contextlib.contextmanager
