@@ -480,10 +480,10 @@ def test_halo_update_gpu_only(backend, gpu_communicators):
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
 def test_halo_update_cpu_only(backend, cpu_communicators):
-    np_n_count, cp_n_count = count_memory_paterns(backend, gpu_communicators)
+    np_n_count, cp_n_count = count_memory_paterns(backend, cpu_communicators)
     # We expect both np calls and cp calls
-    assert np_n_calls > 9
-    assert cp_n_calls > 9
+    assert np_n_calls > 0
+    assert cp_n_calls > 0
 
 
 @pytest.fixture
