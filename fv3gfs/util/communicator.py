@@ -91,7 +91,7 @@ class HaloUpdateRequest:
 
 
 class Communicator:
-    def __init__(self, comm, partitioner, force_cpu: bool = True):
+    def __init__(self, comm, partitioner, force_cpu: bool = False):
         self.comm = comm
         self.partitioner: Partitioner = partitioner
         self._force_cpu = force_cpu
@@ -332,7 +332,7 @@ class Communicator:
 class TileCommunicator(Communicator):
     """Performs communications within a single tile or region of a tile"""
 
-    def __init__(self, comm, partitioner: TilePartitioner, force_cpu: bool = True):
+    def __init__(self, comm, partitioner: TilePartitioner, force_cpu: bool = False):
         """Initialize a TileCommunicator.
 
         Args:
@@ -354,7 +354,7 @@ class CubedSphereCommunicator(Communicator):
         self,
         comm,
         partitioner: CubedSpherePartitioner,
-        force_cpu: bool = True,
+        force_cpu: bool = False,
         timer: Optional[Timer] = None,
     ):
         """Initialize a CubedSphereCommunicator.

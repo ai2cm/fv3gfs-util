@@ -206,6 +206,24 @@ def gpu_communicators(cube_partitioner):
 
 
 @pytest.fixture
+def cpu_communicators(cube_partitioner):
+    shared_buffer = {}
+    return_list = []
+    for rank in range(cube_partitioner.total_ranks):
+        return_list.append(
+            fv3gfs.util.CubedSphereCommunicator(
+                comm=fv3gfs.util.testing.DummyComm(
+                    rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
+                ),
+                partitioner=cube_partitioner,
+                force_cpu=True,
+                timer=fv3gfs.util.Timer(),
+            )
+        )
+    return return_list
+
+
+@pytest.fixture
 def tile_partitioner(layout):
     return fv3gfs.util.TilePartitioner(layout)
 
@@ -389,8 +407,7 @@ def test_depth_halo_update(
                         raise NotImplementedError(n_points_update)
 
 
-@pytest.mark.parametrize("backend", ["gtcuda"])
-def test_halo_update_gpu_only(backend, gpu_communicators):
+def count_memory_paterns(backend, communicators):
     if cp is None:
         pytest.skip("Cupy is required")
     if np is None:
@@ -441,18 +458,32 @@ def test_halo_update_gpu_only(backend, gpu_communicators):
         )
 
         req_list = []
-        for communicator in gpu_communicators:
+        for communicator in communicators:
             req = communicator.start_halo_update(quantity, 3)
             req_list.append(req)
         for req in req_list:
             req.wait()
 
     finally:
-        # We expect no np calls and several cp calls
         np.empty = np_original
         cp.empty = cp_original
-        assert np_n_calls == 0
-        assert cp_n_calls > 9
+        return (np_n_calls, cp_n_calls)
+
+
+@pytest.mark.parametrize("backend", ["gtcuda"])
+def test_halo_update_gpu_only(backend, gpu_communicators):
+    np_n_count, cp_n_count = count_memory_paterns(backend, gpu_communicators)
+    # We expect no np calls and several cp calls
+    assert np_n_calls == 0
+    assert cp_n_calls > 9
+
+
+@pytest.mark.parametrize("backend", ["gtcuda"])
+def test_halo_update_cpu_only(backend, cpu_communicators):
+    np_n_count, cp_n_count = count_memory_paterns(backend, gpu_communicators)
+    # We expect both np calls and cp calls
+    assert np_n_calls > 9
+    assert cp_n_calls > 9
 
 
 @pytest.fixture
