@@ -1,6 +1,8 @@
 from typing import Union, Sequence, TypeVar, Tuple
+from .types import Allocator
 from . import constants
 import numpy as np
+import contextlib
 
 try:
     import cupy as cp
@@ -81,3 +83,20 @@ def device_synchronize(array: Union[np.ndarray, Storage]):
     """Synchronize all memory communication"""
     if cp and isinstance(array, cp.ndarray):
         cp.cuda.runtime.deviceSynchronize()
+
+
+@contextlib.contextmanager
+def mpi_safe_allocator(allocator: Allocator):
+    """Make sure the allocator use complies with what MPI expect
+    
+    For G2G transfer, MPICH requires the allocation to not be done with managed
+    memory. Since we can't know what state `cupy` is in with switch for the default
+    pooled allocator.
+    """
+    if allocator is cp.empty:
+        original_allocator = cp.cuda.get_allocator()
+        cp.cuda.set_allocator(cp.cuda.alloc)
+        yield allocator
+        cp.cuda.set_allocator(original_allocator)
+    else:
+        yield allocator

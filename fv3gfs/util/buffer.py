@@ -3,7 +3,12 @@ from ._timing import Timer, NullTimer
 import numpy as np
 from numpy.lib.index_tricks import IndexExpression
 import contextlib
-from .utils import is_c_contiguous, safe_assign_array, device_synchronize
+from .utils import (
+    is_c_contiguous,
+    safe_assign_array,
+    device_synchronize,
+    mpi_safe_allocator,
+)
 from .types import Allocator
 
 BufferKey = Tuple[Callable, Iterable[int], type]
@@ -49,7 +54,8 @@ class Buffer:
         else:
             if key not in BUFFER_CACHE:
                 BUFFER_CACHE[key] = []
-            array = allocator(shape, dtype=dtype)  # type: np.ndarray
+            with mpi_safe_allocator(allocator) as safe_allocator:
+                array = safe_allocator(shape, dtype=dtype)  # type: np.ndarray
             assert is_c_contiguous(array)
             return cls(key, array)
 
