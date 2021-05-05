@@ -93,7 +93,7 @@ def mpi_safe_allocator(allocator: Allocator):
     memory. Since we can't know what state `cupy` is in with switch for the default
     pooled allocator.
     """
-    if allocator is cp.empty:
+    if cp and allocator is cp.empty:
         original_allocator = cp.cuda.get_allocator()
         cp.cuda.set_allocator(cp.cuda.alloc)
         yield allocator
