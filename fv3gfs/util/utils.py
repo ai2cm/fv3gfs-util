@@ -95,7 +95,7 @@ def mpi_safe_allocator(allocator: Allocator):
     """
     if cp and allocator is cp.empty:
         original_allocator = cp.cuda.get_allocator()
-        cp.cuda.set_allocator(cp.cuda.alloc)
+        cp.cuda.set_allocator(cp.get_default_memory_pool().malloc)
         yield allocator
         cp.cuda.set_allocator(original_allocator)
     else:
