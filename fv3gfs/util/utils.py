@@ -1,8 +1,7 @@
-from typing import Union, Sequence, TypeVar, Tuple
+from typing import Union, Sequence, TypeVar, Tuple, Iterable
 from .types import Allocator
 from . import constants
 import numpy as np
-import contextlib
 
 try:
     import cupy as cp
@@ -85,18 +84,25 @@ def device_synchronize(array: Union[np.ndarray, Storage]):
         cp.cuda.runtime.deviceSynchronize()
 
 
-@contextlib.contextmanager
-def mpi_safe_allocator(allocator: Allocator):
-    """Make sure the allocator use complies with what MPI expect
+def safe_mpi_allocate(
+    allocator: Allocator, shape: Iterable[int], dtype: type
+) -> np.ndarray:
+    """Make sure the allocation use an allocator that works with MPI
     
     For G2G transfer, MPICH requires the allocation to not be done with managed
     memory. Since we can't know what state `cupy` is in with switch for the default
     pooled allocator.
+    We raise a RuntimeError if a cupy array is allocated outside of the safe code path.
+    Though the allocation _might_ be safe, the MPI crash that result from a managed memory
+    allocation is non trivial and should be tightly controlled.
     """
-    if cp and allocator is cp.empty:
+    if cp and (allocator is cp.empty or allocator is cp.zeroes):
         original_allocator = cp.cuda.get_allocator()
         cp.cuda.set_allocator(cp.get_default_memory_pool().malloc)
-        yield allocator
+        array = allocator(shape, dtype=dtype)  # type: np.ndarray
         cp.cuda.set_allocator(original_allocator)
     else:
-        yield allocator
+        array = allocator(shape, dtype=dtype)
+        if array is cp.ndarray:
+            raise RuntimeError("cupy allocation might not be MPI-safe")
+    return array

@@ -7,7 +7,7 @@ from .utils import (
     is_c_contiguous,
     safe_assign_array,
     device_synchronize,
-    mpi_safe_allocator,
+    safe_mpi_allocate,
 )
 from .types import Allocator
 
@@ -54,8 +54,7 @@ class Buffer:
         else:
             if key not in BUFFER_CACHE:
                 BUFFER_CACHE[key] = []
-            with mpi_safe_allocator(allocator) as safe_allocator:
-                array = safe_allocator(shape, dtype=dtype)  # type: np.ndarray
+                array = safe_mpi_allocate(allocator, shape, dtype=dtype)
             assert is_c_contiguous(array)
             return cls(key, array)
 
