@@ -43,10 +43,10 @@ class FunctionRequest:
         self._function()
 
 
-HaloSendTuple = Tuple[AsyncRequest, "Buffer"]
-HaloRequestSendList = List[HaloSendTuple]
-HaloRecvTuple = Tuple[AsyncRequest, "Buffer", np.ndarray]
-HaloRequestRecvList = List[HaloRecvTuple]
+_HaloSendTuple = Tuple[AsyncRequest, "Buffer"]
+_HaloRequestSendList = List[_HaloSendTuple]
+_HaloRecvTuple = Tuple[AsyncRequest, "Buffer", np.ndarray]
+_HaloRequestRecvList = List[_HaloRecvTuple]
 
 
 class HaloUpdateRequest:
@@ -54,8 +54,8 @@ class HaloUpdateRequest:
 
     def __init__(
         self,
-        send_data: HaloRequestSendList,
-        recv_data: HaloRequestRecvList,
+        send_data: _HaloRequestSendList,
+        recv_data: _HaloRequestRecvList,
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
@@ -470,7 +470,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Isend_halos(
         self, quantity: Quantity, n_points: int, tag: int = 0
-    ) -> HaloRequestSendList:
+    ) -> _HaloRequestSendList:
         send_data = []
         for boundary in self.boundaries.values():
             with self.timer.clock("pack"):
@@ -497,7 +497,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Irecv_halos(
         self, quantity: Quantity, n_points: int, tag: int = 0
-    ) -> HaloRequestRecvList:
+    ) -> _HaloRequestRecvList:
         recv_data = []
         for boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("unpack"):
@@ -610,10 +610,10 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
-        send_data: HaloRequestSendList = self._Isend_vector_halos(
+        send_data: _HaloRequestSendList = self._Isend_vector_halos(
             x_quantity, y_quantity, n_points, tags=(tag1, tag2)
         )
-        recv_data: HaloRequestRecvList = self._Irecv_halos(
+        recv_data: _HaloRequestRecvList = self._Irecv_halos(
             x_quantity, n_points, tag=tag1
         )
         recv_data.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
@@ -621,7 +621,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Isend_vector_halos(
         self, x_quantity, y_quantity, n_points, tags: Tuple[int, int] = (0, 0)
-    ) -> HaloRequestSendList:
+    ) -> _HaloRequestSendList:
         send_data = []
         for _boundary_type, boundary in self.boundaries.items():
             with self.timer.clock("pack"):
@@ -663,7 +663,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Isend_vector_shared_boundary(
         self, x_quantity, y_quantity, tag=0
-    ) -> HaloRequestSendList:
+    ) -> _HaloRequestSendList:
         south_boundary = self.boundaries[constants.SOUTH]
         west_boundary = self.boundaries[constants.WEST]
         south_data = x_quantity.view.southwest.sel(
@@ -716,7 +716,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Irecv_vector_shared_boundary(
         self, x_quantity, y_quantity, tag=0
-    ) -> HaloRequestRecvList:
+    ) -> _HaloRequestRecvList:
         north_rank = self.boundaries[constants.NORTH].to_rank
         east_rank = self.boundaries[constants.EAST].to_rank
         north_data = x_quantity.view.northwest.sel(
@@ -751,7 +751,7 @@ class CubedSphereCommunicator(Communicator):
         ]
         return recv_requests
 
-    def _Isend(self, numpy_module, in_array, **kwargs) -> HaloSendTuple:
+    def _Isend(self, numpy_module, in_array, **kwargs) -> _HaloSendTuple:
         # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
             buffer = Buffer.get_from_cache(
@@ -772,7 +772,7 @@ class CubedSphereCommunicator(Communicator):
             with self.timer.clock("Recv"):
                 self.comm.Recv(recvbuf, **kwargs)
 
-    def _Irecv(self, numpy_module, out_array, **kwargs) -> HaloRecvTuple:
+    def _Irecv(self, numpy_module, out_array, **kwargs) -> _HaloRecvTuple:
         # Prepare a contiguous buffer to receive data
         with self.timer.clock("Irecv"):
             buffer = Buffer.get_from_cache(
