@@ -1,8 +1,6 @@
 import pytest
 import fv3gfs.util
-import functools
 import copy
-import numpy as np
 
 try:
     import cupy as cp
@@ -405,85 +403,6 @@ def test_depth_halo_update(
                         assert numpy.all(quantity.sel(**{dim: extent + 2}) <= 3)
                     if n_points_update > 3:
                         raise NotImplementedError(n_points_update)
-
-
-def count_memory_paterns(backend, communicators):
-    if cp is None:
-        pytest.skip("Cupy is required")
-    if np is None:
-        pytest.skip("Numpy is required")
-
-    # Switch empty() call with wrapped version that
-    # counts how many call are made
-    np_original = np.empty
-    cp_original = cp.empty
-    global np_n_calls
-    np_n_calls = 0
-    global cp_n_calls
-    cp_n_calls = 0
-
-    def np_count_calls(func):
-        """Count np.empty call"""
-
-        @functools.wraps(func)
-        def np_wrapped(*args, **kwargs):
-            global np_n_calls
-            np_n_calls += 1
-            return func(*args, **kwargs)
-
-        return np_wrapped
-
-    def cp_count_calls(func):
-        """Count cp.empty call"""
-
-        @functools.wraps(func)
-        def cp_wrapped(*args, **kwargs):
-            global cp_n_calls
-            cp_n_calls += 1
-            return func(*args, **kwargs)
-
-        return cp_wrapped
-
-    try:
-        # Using the above, do an halo exchange
-        np.empty = np_count_calls(np.empty)
-        cp.empty = cp_count_calls(cp.empty)
-
-        sizer = fv3gfs.util.SubtileGridSizer(
-            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
-        )
-        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
-        quantity = quantity_factory.empty(
-            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
-        )
-
-        req_list = []
-        for communicator in communicators:
-            req = communicator.start_halo_update(quantity, 3)
-            req_list.append(req)
-        for req in req_list:
-            req.wait()
-
-    finally:
-        np.empty = np_original
-        cp.empty = cp_original
-        return (np_n_calls, cp_n_calls)
-
-
-@pytest.mark.parametrize("backend", ["gtcuda"])
-def test_halo_update_gpu_only(backend, gpu_communicators):
-    np_n_count, cp_n_count = count_memory_paterns(backend, gpu_communicators)
-    # We expect no np calls and several cp calls
-    assert np_n_calls == 0
-    assert cp_n_calls > 9
-
-
-@pytest.mark.parametrize("backend", ["gtcuda"])
-def test_halo_update_cpu_only(backend, cpu_communicators):
-    np_n_count, cp_n_count = count_memory_paterns(backend, cpu_communicators)
-    # We expect both np calls and cp calls
-    assert np_n_calls > 0
-    assert cp_n_calls > 0
 
 
 @pytest.fixture
