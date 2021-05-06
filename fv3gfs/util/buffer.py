@@ -54,7 +54,7 @@ class Buffer:
         else:
             if key not in BUFFER_CACHE:
                 BUFFER_CACHE[key] = []
-                array = safe_mpi_allocate(allocator, shape, dtype=dtype)
+            array = safe_mpi_allocate(allocator, shape, dtype=dtype)
             assert is_c_contiguous(array)
             return cls(key, array)
 
