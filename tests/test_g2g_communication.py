@@ -43,7 +43,7 @@ def cube_partitioner(tile_partitioner):
 
 
 @pytest.fixture
-def communicator_list(cube_partitioner):
+def cpu_communicators(cube_partitioner):
     shared_buffer = {}
     return_list = []
     for rank in range(cube_partitioner.total_ranks):
@@ -52,6 +52,7 @@ def communicator_list(cube_partitioner):
                 comm=fv3gfs.util.testing.DummyComm(
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
+                force_cpu=True,
                 partitioner=cube_partitioner,
                 timer=fv3gfs.util.Timer(),
             )
@@ -77,18 +78,24 @@ def gpu_communicators(cube_partitioner):
     return return_list
 
 
+# To record the calls to cp.empty/np.empty we use a global
+# dict indexed on the functions
+global N_EMPTY_CALLS
+N_EMPTY_CALLS = {}
+
+
 @contextlib.contextmanager
 def module_count_calls_to_empty(module):
-    global n_calls
-    n_calls = 0
+    global N_EMPTY_CALLS
+    N_EMPTY_CALLS[module.empty] = 0
 
     def count_calls(func):
-        """Count np.empty call"""
+        """Count func call"""
 
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
-            global n_calls
-            n_calls += 1
+            global N_EMPTY_CALLS
+            N_EMPTY_CALLS[func] = N_EMPTY_CALLS[func] + 1
             return func(*args, **kwargs)
 
         return wrapped
@@ -96,24 +103,22 @@ def module_count_calls_to_empty(module):
     try:
         original = module.empty
         module.empty = count_calls(module.empty)
-        yield n_calls
+        yield
     finally:
         module.empty = original
 
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
 def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
-    with module_count_calls_to_empty(np) as np_n_calls, module_count_calls_to_empty(
-        cp
-    ) as cp_n_calls:
-        sizer = fv3gfs.util.SubtileGridSizer(
-            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
-        )
-        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
-        quantity = quantity_factory.empty(
-            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
-        )
+    sizer = fv3gfs.util.SubtileGridSizer(
+        nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
+    )
+    quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
+    quantity = quantity_factory.empty(
+        [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
+    )
 
+    with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
         req_list = []
         for communicator in gpu_communicators:
             req = communicator.start_halo_update(quantity, 3)
@@ -122,30 +127,30 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
             req.wait()
 
     # We expect no np calls and several cp calls
-    assert np_n_calls == 0
-    assert cp_n_calls > 9
+    global N_EMPTY_CALLS
+    assert N_EMPTY_CALLS[cp.empty] > 9
+    assert N_EMPTY_CALLS[np.empty] == 0
 
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
-def test_halo_update_communicate_though_cpu(backend, gpu_communicators):
-    with module_count_calls_to_empty(np) as np_n_calls, module_count_calls_to_empty(
-        cp
-    ) as cp_n_calls:
-        sizer = fv3gfs.util.SubtileGridSizer(
-            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
-        )
-        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
-        quantity = quantity_factory.empty(
-            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
-        )
+def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
+    sizer = fv3gfs.util.SubtileGridSizer(
+        nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
+    )
+    quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
+    quantity = quantity_factory.empty(
+        [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
+    )
 
+    with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
         req_list = []
-        for communicator in gpu_communicators:
+        for communicator in cpu_communicators:
             req = communicator.start_halo_update(quantity, 3)
             req_list.append(req)
         for req in req_list:
             req.wait()
 
-    # We expect no np calls and several cp calls
-    assert np_n_calls > 0
-    assert cp_n_calls > 9
+    # We expect several np calls and several cp calls
+    global N_EMPTY_CALLS
+    assert N_EMPTY_CALLS[np.empty] > 9
+    assert N_EMPTY_CALLS[cp.empty] > 9

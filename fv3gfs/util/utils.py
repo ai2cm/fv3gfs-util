@@ -96,13 +96,13 @@ def safe_mpi_allocate(
     Though the allocation _might_ be safe, the MPI crash that result from a managed memory
     allocation is non trivial and should be tightly controlled.
     """
-    if cp and (allocator is cp.empty or allocator is cp.zeroes):
+    if cp and (allocator is cp.empty or allocator is cp.zeros):
         original_allocator = cp.cuda.get_allocator()
         cp.cuda.set_allocator(cp.get_default_memory_pool().malloc)
         array = allocator(shape, dtype=dtype)  # type: np.ndarray
         cp.cuda.set_allocator(original_allocator)
     else:
         array = allocator(shape, dtype=dtype)
-        if array is cp.ndarray:
+        if cp and array is cp.ndarray:
             raise RuntimeError("cupy allocation might not be MPI-safe")
     return array
