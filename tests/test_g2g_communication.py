@@ -110,15 +110,14 @@ def module_count_calls_to_empty(module):
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
 def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
-    sizer = fv3gfs.util.SubtileGridSizer(
-        nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
-    )
-    quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
-    quantity = quantity_factory.empty(
-        [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
-    )
-
     with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
+        sizer = fv3gfs.util.SubtileGridSizer(
+            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
+        )
+        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
+        quantity = quantity_factory.empty(
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
+        )
         req_list = []
         for communicator in gpu_communicators:
             req = communicator.start_halo_update(quantity, 3)
@@ -134,15 +133,15 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
 
 @pytest.mark.parametrize("backend", ["gtcuda"])
 def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
-    sizer = fv3gfs.util.SubtileGridSizer(
-        nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
-    )
-    quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
-    quantity = quantity_factory.empty(
-        [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
-    )
-
     with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
+        sizer = fv3gfs.util.SubtileGridSizer(
+            nx=64, ny=64, nz=79, n_halo=3, extra_dim_lengths={}
+        )
+        quantity_factory = fv3gfs.util.QuantityFactory.from_backend(sizer, backend)
+        quantity = quantity_factory.empty(
+            [fv3gfs.util.Z_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.X_DIM], units=""
+        )
+
         req_list = []
         for communicator in cpu_communicators:
             req = communicator.start_halo_update(quantity, 3)
