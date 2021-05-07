@@ -71,10 +71,10 @@ def test_buffer_cache_appends(allocator, backend):
     BUFFER_CACHE.clear()
     assert len(BUFFER_CACHE) == 0
     shape = (10, 10, 10)
-    b0_0 = Buffer.get_from_cache(allocator, shape, float)
+    b0_0 = Buffer.pop_from_cache(allocator, shape, float)
     b0_0.array.fill(42)
     assert len(BUFFER_CACHE) == 1
-    b0_1 = Buffer.get_from_cache(allocator, shape, float)
+    b0_1 = Buffer.pop_from_cache(allocator, shape, float)
     b0_1.array.fill(23)
     assert b0_0._key == b0_1._key
     assert (b0_0.array != b0_1.array).all()
@@ -92,12 +92,12 @@ def test_buffer_reuse(allocator, backend):
     BUFFER_CACHE.clear()
     assert len(BUFFER_CACHE) == 0
     shape = (10, 10, 10)
-    b0 = Buffer.get_from_cache(allocator, shape, float)
+    b0 = Buffer.pop_from_cache(allocator, shape, float)
     fill_scalar = 42
     b0.array.fill(fill_scalar)
     assert len(BUFFER_CACHE) == 1
     Buffer.push_to_cache(b0)
     assert len(BUFFER_CACHE) == 1
-    b1 = Buffer.get_from_cache(allocator, shape, float)
+    b1 = Buffer.pop_from_cache(allocator, shape, float)
     assert len(next(iter(BUFFER_CACHE.items()))[1]) == 0
     assert (b1.array == fill_scalar).all()

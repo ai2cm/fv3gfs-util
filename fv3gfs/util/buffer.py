@@ -36,7 +36,7 @@ class Buffer:
         self.array = array
 
     @classmethod
-    def get_from_cache(
+    def pop_from_cache(
         cls, allocator: Allocator, shape: Iterable[int], dtype: type
     ) -> "Buffer":
         """Retrieve or insert then retrieve of buffer from cache.
@@ -111,7 +111,7 @@ def array_buffer(
         buffer_array: an ndarray created according to the specification in the args.
             May be retained and re-used in subsequent calls.
     """
-    buffer = Buffer.get_from_cache(allocator, shape, dtype)
+    buffer = Buffer.pop_from_cache(allocator, shape, dtype)
     yield buffer
     Buffer.push_to_cache(buffer)
 

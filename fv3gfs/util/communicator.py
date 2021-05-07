@@ -754,7 +754,7 @@ class CubedSphereCommunicator(Communicator):
     def _Isend(self, numpy_module, in_array, **kwargs) -> _HaloSendTuple:
         # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
-            buffer = Buffer.get_from_cache(
+            buffer = Buffer.pop_from_cache(
                 numpy_module.empty, in_array.shape, in_array.dtype
             )
             buffer.assign_from(in_array)
@@ -775,7 +775,7 @@ class CubedSphereCommunicator(Communicator):
     def _Irecv(self, numpy_module, out_array, **kwargs) -> _HaloRecvTuple:
         # Prepare a contiguous buffer to receive data
         with self.timer.clock("Irecv"):
-            buffer = Buffer.get_from_cache(
+            buffer = Buffer.pop_from_cache(
                 numpy_module.empty, out_array.shape, out_array.dtype
             )
             recv_request = self.comm.Irecv(buffer.array, **kwargs)
