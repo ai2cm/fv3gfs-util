@@ -127,11 +127,11 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
 
     # We expect no np calls and several cp calls
     global N_EMPTY_CALLS
-    assert N_EMPTY_CALLS[cp.empty] > 9
+    assert N_EMPTY_CALLS[cp.empty] > 0
     assert N_EMPTY_CALLS[np.empty] == 0
 
 
-@pytest.mark.parametrize("backend", ["gtcuda"])
+@pytest.mark.parametrize("backend", ["gtcuda"], indirect=True)
 def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
     with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
         sizer = fv3gfs.util.SubtileGridSizer(
@@ -151,5 +151,5 @@ def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
 
     # We expect several np calls and several cp calls
     global N_EMPTY_CALLS
-    assert N_EMPTY_CALLS[np.empty] > 9
-    assert N_EMPTY_CALLS[cp.empty] > 9
+    assert N_EMPTY_CALLS[np.empty] > 0
+    assert N_EMPTY_CALLS[cp.empty] > 0
