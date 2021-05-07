@@ -2,11 +2,6 @@ import pytest
 import fv3gfs.util
 import copy
 
-try:
-    import cupy as cp
-except ModuleNotFoundError:
-    cp = None
-
 
 @pytest.fixture
 def dtype(numpy):
@@ -179,42 +174,6 @@ def communicator_list(cube_partitioner):
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
                 partitioner=cube_partitioner,
-                timer=fv3gfs.util.Timer(),
-            )
-        )
-    return return_list
-
-
-@pytest.fixture
-def gpu_communicators(cube_partitioner):
-    shared_buffer = {}
-    return_list = []
-    for rank in range(cube_partitioner.total_ranks):
-        return_list.append(
-            fv3gfs.util.CubedSphereCommunicator(
-                comm=fv3gfs.util.testing.DummyComm(
-                    rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
-                ),
-                partitioner=cube_partitioner,
-                force_cpu=False,
-                timer=fv3gfs.util.Timer(),
-            )
-        )
-    return return_list
-
-
-@pytest.fixture
-def cpu_communicators(cube_partitioner):
-    shared_buffer = {}
-    return_list = []
-    for rank in range(cube_partitioner.total_ranks):
-        return_list.append(
-            fv3gfs.util.CubedSphereCommunicator(
-                comm=fv3gfs.util.testing.DummyComm(
-                    rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
-                ),
-                partitioner=cube_partitioner,
-                force_cpu=True,
                 timer=fv3gfs.util.Timer(),
             )
         )
