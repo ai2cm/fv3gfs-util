@@ -24,7 +24,6 @@ def total_ranks(ranks_per_tile):
 
 @pytest.fixture
 def shape(nz, ny, nx, dims, n_points):
-    return (3, 3, 3)
     return_list = []
     length_dict = {
         fv3gfs.util.X_DIM: 2 * n_points + nx,
