@@ -69,20 +69,23 @@ def test_buffer_cache_appends(allocator, backend):
     if backend == "gt4py_cupy":
         pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
     BUFFER_CACHE.clear()
+    # Cache is cleared - no cache line
     assert len(BUFFER_CACHE) == 0
     shape = (10, 10, 10)
-    b0_0 = Buffer.pop_from_cache(allocator, shape, float)
-    b0_0.array.fill(42)
+    # Pop two buffers with the same key - this creates a cache line for the key
+    first_buffer = Buffer.pop_from_cache(allocator, shape, float)
+    first_buffer.array.fill(42)
     assert len(BUFFER_CACHE) == 1
-    b0_1 = Buffer.pop_from_cache(allocator, shape, float)
-    b0_1.array.fill(23)
-    assert b0_0._key == b0_1._key
-    assert (b0_0.array != b0_1.array).all()
+    second_buffer = Buffer.pop_from_cache(allocator, shape, float)
+    second_buffer.array.fill(23)
+    assert first_buffer._key == second_buffer._key
+    assert (first_buffer.array != second_buffer.array).all()
     assert len(BUFFER_CACHE) == 1
-    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 0
-    Buffer.push_to_cache(b0_0)
-    Buffer.push_to_cache(b0_1)
-    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 2
+    assert len(BUFFER_CACHE[first_buffer._key]) == 0
+    # Pushing back the buffers, the cache line should have two items
+    Buffer.push_to_cache(first_buffer)
+    Buffer.push_to_cache(second_buffer)
+    assert len(BUFFER_CACHE[first_buffer._key]) == 2
 
 
 def test_buffer_reuse(allocator, backend):
@@ -90,14 +93,66 @@ def test_buffer_reuse(allocator, backend):
     if backend == "gt4py_cupy":
         pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
     BUFFER_CACHE.clear()
+    # Cache is cleared - no cache line
     assert len(BUFFER_CACHE) == 0
     shape = (10, 10, 10)
-    b0 = Buffer.pop_from_cache(allocator, shape, float)
+    # We pop'ed a buffer from the cache. This created a cache line for key
+    # first_buffer._key. That cache line is an empty array for now (the element was pop'ed)
+    first_buffer = Buffer.pop_from_cache(allocator, shape, float)
     fill_scalar = 42
-    b0.array.fill(fill_scalar)
+    first_buffer.array.fill(fill_scalar)
     assert len(BUFFER_CACHE) == 1
-    Buffer.push_to_cache(b0)
+    assert len(BUFFER_CACHE[first_buffer._key]) == 0
+    # Pushing back - the cache line array as the first_buffer in it, if we
+    # re-pop it we should have the fill value (same buffer, no re-alloc)
+    Buffer.push_to_cache(first_buffer)
     assert len(BUFFER_CACHE) == 1
-    b1 = Buffer.pop_from_cache(allocator, shape, float)
-    assert len(next(iter(BUFFER_CACHE.items()))[1]) == 0
-    assert (b1.array == fill_scalar).all()
+    assert len(BUFFER_CACHE[first_buffer._key]) == 1
+    repop_buffer = Buffer.pop_from_cache(allocator, shape, float)
+    assert len(BUFFER_CACHE[first_buffer._key]) == 0
+    assert (repop_buffer.array == fill_scalar).all()
+    # Clean up
+    Buffer.push_to_cache(repop_buffer)
+
+
+def test_cacheline_differentiation(allocator, backend):
+    """Test allocation with different keys creates different cache lines"""
+    if backend == "gt4py_cupy":
+        pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
+    BUFFER_CACHE.clear()
+    # Cache is cleared - no cache line
+    assert len(BUFFER_CACHE) == 0
+    shape = (10, 10, 10)
+    # Pop a float buffer - create a cache line for the triplet of parameters
+    first_buffer = Buffer.pop_from_cache(allocator, shape, float)
+    first_fill_scalar = 42
+    first_buffer.array.fill(first_fill_scalar)
+    assert len(BUFFER_CACHE) == 1
+    assert len(BUFFER_CACHE[first_buffer._key]) == 0
+    # Pop an int buffer - create a second cache line for the triplet of parameters
+    second_buffer = Buffer.pop_from_cache(allocator, shape, int)
+    second_fill_scalar = 44
+    second_buffer.array.fill(second_fill_scalar)
+    assert len(BUFFER_CACHE) == 2
+    assert len(BUFFER_CACHE[second_buffer._key]) == 0
+    # Check buffer are different
+    assert first_buffer._key != second_buffer._key
+    assert (first_buffer.array != second_buffer.array).all()
+    # Pushing back - the cache line get their buffer back
+    Buffer.push_to_cache(first_buffer)
+    Buffer.push_to_cache(second_buffer)
+    assert len(BUFFER_CACHE) == 2
+    assert len(BUFFER_CACHE[first_buffer._key]) == 1
+    assert len(BUFFER_CACHE[second_buffer._key]) == 1
+    # We pop back the buffer and expect to get the previously fill'ed buffers
+    repop_first_buffer = Buffer.pop_from_cache(allocator, shape, float)
+    assert len(BUFFER_CACHE[repop_first_buffer._key]) == 0
+    assert len(BUFFER_CACHE[second_buffer._key]) == 1
+    repop_second_buffer = Buffer.pop_from_cache(allocator, shape, int)
+    assert len(BUFFER_CACHE[repop_first_buffer._key]) == 0
+    assert len(BUFFER_CACHE[repop_second_buffer._key]) == 0
+    assert (repop_first_buffer.array == first_fill_scalar).all()
+    assert (repop_second_buffer.array == second_fill_scalar).all()
+    # Clean up
+    Buffer.push_to_cache(repop_first_buffer)
+    Buffer.push_to_cache(repop_second_buffer)

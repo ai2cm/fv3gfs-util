@@ -109,7 +109,7 @@ class DummyComm:
             sendbuf = self._get_buffer("scatter", copy.deepcopy(sendbuf))
         else:
             sendbuf = self._get_buffer("scatter", None)
-        safe_assign_array(recvbuf[:], sendbuf[self.rank])
+        safe_assign_array(recvbuf, sendbuf[self.rank])
 
     def Gather(self, sendbuf, recvbuf, root=0, **kwargs):
         ensure_contiguous(sendbuf)
@@ -142,7 +142,7 @@ class DummyComm:
 
     def Recv(self, recvbuf, source, **kwargs):
         ensure_contiguous(recvbuf)
-        safe_assign_array(recvbuf[:], self._get_send_recv(source))
+        safe_assign_array(recvbuf, self._get_send_recv(source))
 
     def Irecv(self, recvbuf, source, **kwargs):
         def receive():
