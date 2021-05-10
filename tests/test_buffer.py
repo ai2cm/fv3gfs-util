@@ -1,6 +1,7 @@
 import pytest
 from fv3gfs.util.buffer import send_buffer, recv_buffer, Buffer, BUFFER_CACHE
 from fv3gfs.util.utils import is_contiguous, is_c_contiguous
+import numpy as np
 
 
 @pytest.fixture
@@ -96,8 +97,8 @@ def test_buffer_reuse(allocator, backend):
     # Cache is cleared - no cache line
     assert len(BUFFER_CACHE) == 0
     shape = (10, 10, 10)
-    # We pop'ed a buffer from the cache. This created a cache line for key
-    # first_buffer._key. That cache line is an empty array for now (the element was pop'ed)
+    # We popped a buffer from the cache. This created a cache line for key
+    # first_buffer._key. That cache line is an empty array for now (the element was popped)
     first_buffer = Buffer.pop_from_cache(allocator, shape, float)
     fill_scalar = 42
     first_buffer.array.fill(fill_scalar)
@@ -156,3 +157,25 @@ def test_cacheline_differentiation(allocator, backend):
     # Clean up
     Buffer.push_to_cache(repop_first_buffer)
     Buffer.push_to_cache(repop_second_buffer)
+
+
+@pytest.mark.parametrize(
+    "first_args, second_args",
+    [
+        pytest.param(((10, 10, 10), float), ((10, 10, 10), int), id="different_dtype"),
+        pytest.param(((10, 10, 10), float), ((10, 10, 5), float), id="different_shape"),
+    ],
+)
+def test_new_args_gives_different_buffer(allocator, backend, first_args, second_args):
+    if backend == "gt4py_cupy":
+        pytest.skip("gt4py gpu backend cannot produce contiguous arrays")
+    BUFFER_CACHE.clear()
+    first_buffer = Buffer.pop_from_cache(allocator, *first_args)
+    Buffer.push_to_cache(first_buffer)
+    second_buffer = Buffer.pop_from_cache(allocator, *second_args)
+    assert not (first_buffer is second_buffer)
+    assert first_buffer._key != second_buffer._key
+    first_buffer.array[:] = 10.0
+    second_buffer.array[:] = 1.0
+    np.testing.assert_array_equal(first_buffer.array, 10.0)
+    np.testing.assert_array_equal(second_buffer.array, 1.0)
