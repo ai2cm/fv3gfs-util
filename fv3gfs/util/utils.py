@@ -76,6 +76,8 @@ def safe_assign_array(
             to_array[:] = cp.asarray(from_array)
         elif cp and isinstance(from_array, cp.ndarray):
             to_array[:] = cp.asnumpy(from_array)
+        else:
+            raise
 
 
 def device_synchronize(array: Union[np.ndarray, Storage]):
