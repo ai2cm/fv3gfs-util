@@ -18,7 +18,7 @@ def non_contiguous_array(contiguous_array):
     return contiguous_array.transpose(2, 0, 1)
 
 
-@pytest.fixture(params=["empty", "zeros", "ones"])
+@pytest.fixture(params=["empty", "zeros"])
 def allocator(request, numpy):
     return getattr(numpy, request.param)
 
@@ -179,3 +179,11 @@ def test_new_args_gives_different_buffer(allocator, backend, first_args, second_
     second_buffer.array[:] = 1.0
     np.testing.assert_array_equal(first_buffer.array, 10.0)
     np.testing.assert_array_equal(second_buffer.array, 1.0)
+
+
+@pytest.mark.parametrize("allocator, backend", [["ones", "cupy"]], indirect=True)
+def test_mpi_unsafe_allocator_exception(backend, allocator):
+    BUFFER_CACHE.clear()
+    print(allocator)
+    with pytest.raises(RuntimeError):
+        Buffer.pop_from_cache(allocator, shape=(10, 10, 10), dtype=float)
