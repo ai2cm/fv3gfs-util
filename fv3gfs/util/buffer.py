@@ -22,7 +22,6 @@ class Buffer:
     array: ndarray allocated
     """
 
-    _key: BufferKey
     array: np.ndarray
 
     def __init__(self, key: BufferKey, array: np.ndarray):
