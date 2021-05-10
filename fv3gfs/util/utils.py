@@ -106,6 +106,6 @@ def safe_mpi_allocate(
         cp.cuda.set_allocator(original_allocator)
     else:
         array = allocator(shape, dtype=dtype)
-        if cp and isinstance(array, cp.ndarray):
+        if __debug__ and cp and isinstance(array, cp.ndarray):
             raise RuntimeError("cupy allocation might not be MPI-safe")
     return array
