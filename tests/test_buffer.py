@@ -1,7 +1,6 @@
 import pytest
 from fv3gfs.util.buffer import send_buffer, recv_buffer, Buffer, BUFFER_CACHE
 from fv3gfs.util.utils import is_contiguous, is_c_contiguous
-import numpy as np
 
 
 @pytest.fixture
@@ -177,8 +176,8 @@ def test_new_args_gives_different_buffer(allocator, backend, first_args, second_
     assert first_buffer._key != second_buffer._key
     first_buffer.array[:] = 10.0
     second_buffer.array[:] = 1.0
-    np.testing.assert_array_equal(first_buffer.array, 10.0)
-    np.testing.assert_array_equal(second_buffer.array, 1.0)
+    assert (first_buffer.array == 10.0).all()
+    assert (second_buffer.array == 1.0).all()
 
 
 @pytest.mark.parametrize("allocator, backend", [["ones", "cupy"]], indirect=True)
