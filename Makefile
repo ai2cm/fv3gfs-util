@@ -51,6 +51,8 @@ lint:
 	mypy --follow-imports silent --show-error-codes fv3gfs
 	@echo "LINTING SUCCESSFUL"
 
+constraints.txt: requirements.txt setup.py
+	pip-compile $^ --output-file constraints.txt
 
 clean:
 	$(MAKE) -c examples/mpi clean

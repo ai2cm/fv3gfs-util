@@ -68,7 +68,7 @@ if [ "${target}" == "gpu" ] ; then
     set -e
     pip3 install cupy-cuda102
 fi
-pip3 install .
+pip3 install -c constraints.txt .
 pytest --junitxml results.xml tests
 
 deactivate
