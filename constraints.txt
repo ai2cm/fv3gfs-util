@@ -36,7 +36,7 @@ google-crc32c==1.1.2  # via google-resumable-media
 google-resumable-media==1.3.0  # via google-cloud-storage
 googleapis-common-protos==1.53.0  # via google-api-core  # via -r requirements.txt
 h5netcdf==0.11.0  # via -r requirements.txt
-h5py==3.2.1  # via  #   -r requirements.txt  #   h5netcdf
+h5py==3.2.1  # via h5netcdf
 hypothesis==6.13.10  # via gt4py
 idna==2.10  # via  #   requests  #   yarl
 imagesize==1.2.0  # via sphinx

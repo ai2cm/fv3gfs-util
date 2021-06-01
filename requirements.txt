@@ -18,7 +18,6 @@ gcsfs>=0.7.0
 google-cloud-storage
 black
 numcodecs
-h5py
 h5netcdf
 dask
 toolz
