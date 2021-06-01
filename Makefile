@@ -53,6 +53,7 @@ lint:
 
 constraints.txt: requirements.txt setup.py
 	pip-compile $^ --output-file constraints.txt
+	sed -i '/^git+https/d' constraints.txt
 
 clean:
 	$(MAKE) -c examples/mpi clean
