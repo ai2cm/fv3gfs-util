@@ -16,7 +16,7 @@ chardet==4.0.0  # via  #   aiohttp  #   requests
 click==7.1.2  # via  #   black  #   gt4py
 cloudpickle==1.6.0  # via dask
 colorama==0.4.4  # via twine
-coverage[toml]==5.5  # via  #   -r requirements.txt  #   pytest-cov
+coverage==5.5  # via  #   -r requirements.txt  #   pytest-cov
 cryptography==3.4.7  # via secretstorage
 dask==2021.5.1  # via -r requirements.txt
 decorator==5.0.9  # via gcsfs
