@@ -19,7 +19,7 @@ google-cloud-storage
 black
 numcodecs
 h5netcdf
-dask
+dask>=2021.*
 toolz
 git+https://github.com/GridTools/gt4py.git@db40777788863bfe87b9674b118e8bd5b8db0440#egg=gt4py
 
