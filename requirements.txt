@@ -5,13 +5,10 @@ flake8
 mypy
 tox
 coverage
-Sphinx
 twine
 f90nml>=1.1.0
 appdirs>=1.4.0
-requests
 sphinx_rtd_theme
-pytest
 pytest-cov
 pytest-subtests
 gcsfs>=0.7.0
@@ -19,7 +16,6 @@ google-cloud-storage
 black
 numcodecs
 h5netcdf
-dask>=2021.*
-toolz
+dask
 git+https://github.com/GridTools/gt4py.git@db40777788863bfe87b9674b118e8bd5b8db0440#egg=gt4py
 
