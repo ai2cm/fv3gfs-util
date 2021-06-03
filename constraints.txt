@@ -35,7 +35,7 @@ google-crc32c==1.1.2  # via google-resumable-media
 google-resumable-media==1.3.0  # via google-cloud-storage
 googleapis-common-protos==1.53.0  # via google-api-core  # via -r requirements.txt
 h5netcdf==0.11.0  # via -r requirements.txt
-h5py==3.2.1  # via h5netcdf
+h5py==2.10.0  # via  #   -r requirements.txt  #   h5netcdf
 hypothesis==6.13.12  # via gt4py
 idna==2.10  # via  #   requests  #   yarl
 imagesize==1.2.0  # via sphinx
@@ -49,8 +49,8 @@ more-itertools==8.8.0  # via pytest
 multidict==5.1.0  # via  #   aiohttp  #   yarl
 mypy-extensions==0.4.3  # via  #   black  #   mypy
 mypy==0.812  # via -r requirements.txt
-numcodecs==0.7.3  # via -r requirements.txt
-numpy==1.20.3  # via  #   cftime  #   fv3gfs-util (setup.py)  #   gt4py  #   h5py  #   numcodecs
+numcodecs==0.7.2  # via -r requirements.txt
+numpy==1.16.5  # via  #   -r requirements.txt  #   cftime  #   fv3gfs-util (setup.py)  #   gt4py  #   h5py  #   numcodecs
 oauthlib==3.1.1  # via requests-oauthlib
 packaging==20.9  # via  #   bleach  #   google-api-core  #   pytest  #   sphinx  #   tox
 pathspec==0.8.1  # via black
@@ -79,7 +79,7 @@ requests==2.25.1  # via  #   gcsfs  #   google-api-core  #   google-cloud-storag
 rfc3986==1.5.0  # via twine
 rsa==4.7.2  # via google-auth
 secretstorage==3.3.1  # via keyring
-six==1.16.0  # via  #   bleach  #   google-api-core  #   google-auth  #   google-cloud-core  #   google-resumable-media  #   protobuf  #   readme-renderer  #   tox  #   virtualenv
+six==1.16.0  # via  #   bleach  #   google-api-core  #   google-auth  #   google-cloud-core  #   google-resumable-media  #   h5py  #   protobuf  #   readme-renderer  #   tox  #   virtualenv
 snowballstemmer==2.1.0  # via sphinx
 sortedcontainers==2.4.0  # via hypothesis
 sphinx-rtd-theme==0.5.2  # via -r requirements.txt
