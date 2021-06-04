@@ -51,6 +51,10 @@ lint:
 	mypy --follow-imports silent --show-error-codes fv3gfs
 	@echo "LINTING SUCCESSFUL"
 
+# with do not use --no-annotate and beautify the files with `sed`
+#  - first one remove direct git dependencies
+#  - following ones beautify the comments
+#  - last one get rid of an illegaly generated [toml]
 constraints.txt: requirements.txt setup.py
 	pip-compile $^ --output-file constraints.txt
 	sed -i '/^git+https/d' constraints.txt
