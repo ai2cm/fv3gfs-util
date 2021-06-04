@@ -55,7 +55,7 @@ lint:
 #  - first one remove direct git dependencies
 #  - following ones beautify the comments
 #  - last one get rid of an illegaly generated [toml]
-constraints.txt: requirements.txt setup.py
+constraints.txt: requirements.txt requirements_gpu.txt setup.py
 	pip-compile $^ --output-file constraints.txt
 	sed -i '/^git+https/d' constraints.txt
 	sed -i 's/ *# \(.*\)/# \1/g' constraints.txt
