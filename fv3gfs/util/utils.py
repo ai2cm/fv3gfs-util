@@ -1,4 +1,4 @@
-from typing import Union, Sequence, TypeVar, Tuple, Iterable, Optional
+from typing import Union, Sequence, TypeVar, Tuple, Iterable
 from .types import Allocator
 from . import constants
 import numpy as np
@@ -80,9 +80,9 @@ def safe_assign_array(
             raise
 
 
-def device_synchronize(array: Optional[Union[np.ndarray, Storage]]):
+def device_synchronize():
     """Synchronize all memory communication"""
-    if cp and (array is None or isinstance(array, cp.ndarray)):
+    if cp:
         cp.cuda.runtime.deviceSynchronize()
 
 

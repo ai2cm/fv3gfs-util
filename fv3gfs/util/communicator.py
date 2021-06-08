@@ -452,9 +452,10 @@ class CubedSphereCommunicator(Communicator):
         req = self.start_halo_update(quantity, n_points)
         req.wait()
 
-    def _synchronize(self):
+    @staticmethod
+    def _device_synchronize(self):
         """Wait for all work that could be in-flight to finish."""
-        device_synchronize(None)
+        device_synchronize()
 
     def start_halo_update(self, quantity: Quantity, n_points: int) -> HaloUpdateRequest:
         """Start an asynchronous halo update on a quantity.
@@ -468,7 +469,7 @@ class CubedSphereCommunicator(Communicator):
         """
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        self._synchronize()
+        CubedSphereCommunicator._device_synchronize()
         tag = self._get_halo_tag()
         recv_data = self._Irecv_halos(quantity, n_points, tag=tag)
         send_data = self._Isend_halos(quantity, n_points, tag=tag)
@@ -570,7 +571,7 @@ class CubedSphereCommunicator(Communicator):
         """
         if not on_c_grid(x_quantity, y_quantity):
             raise ValueError("vector must be defined on Arakawa C-grid")
-        self._synchronize()
+        CubedSphereCommunicator._device_synchronize()
         tag = self._get_halo_tag()
         send_requests = self._Isend_vector_shared_boundary(
             x_quantity, y_quantity, tag=tag
@@ -616,7 +617,7 @@ class CubedSphereCommunicator(Communicator):
         """
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        self._synchronize()
+        CubedSphereCommunicator._device_synchronize()
         tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
         send_data: _HaloRequestSendList = self._Isend_vector_halos(
             x_quantity, y_quantity, n_points, tags=(tag1, tag2)
