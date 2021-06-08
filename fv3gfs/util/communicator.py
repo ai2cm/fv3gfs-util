@@ -455,6 +455,7 @@ class CubedSphereCommunicator(Communicator):
     @staticmethod
     def _device_synchronize():
         """Wait for all work that could be in-flight to finish."""
+        # this is a method so we can profile it separately from other device syncs
         device_synchronize()
 
     def start_halo_update(self, quantity: Quantity, n_points: int) -> HaloUpdateRequest:
