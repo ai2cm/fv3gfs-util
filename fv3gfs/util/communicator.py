@@ -453,7 +453,7 @@ class CubedSphereCommunicator(Communicator):
         req.wait()
 
     @staticmethod
-    def _device_synchronize(self):
+    def _device_synchronize():
         """Wait for all work that could be in-flight to finish."""
         device_synchronize()
 
