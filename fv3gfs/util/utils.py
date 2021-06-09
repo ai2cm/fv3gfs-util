@@ -8,6 +8,8 @@ try:
 except ImportError:
     cp = None
 
+# Run a deviceSynchronize() to check
+# that the GPU is present and ready to run
 if cp:
     try:
         cp.cuda.runtime.deviceSynchronize()
