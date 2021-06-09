@@ -8,6 +8,11 @@ try:
 except ImportError:
     cp = None
 
+if cp:
+    GPU_AVAILABLE = cp.cuda.runtime.getDeviceCount() > 0
+else:
+    GPU_AVAILABLE = False
+
 try:
     from gt4py.storage.storage import Storage
 except ImportError:
@@ -82,7 +87,7 @@ def safe_assign_array(
 
 def device_synchronize():
     """Synchronize all memory communication"""
-    if cp:
+    if GPU_AVAILABLE:
         cp.cuda.runtime.deviceSynchronize()
 
 
