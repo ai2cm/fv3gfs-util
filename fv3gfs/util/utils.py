@@ -9,7 +9,11 @@ except ImportError:
     cp = None
 
 if cp:
-    GPU_AVAILABLE = cp.cuda.runtime.getDeviceCount() > 0
+    try:
+        cp.cuda.runtime.deviceSynchronize()
+        GPU_AVAILABLE = True.getDeviceCount() > 0
+    except cp.cuda.api.runtime.CUDARuntimeError:
+        GPU_AVAILABLE = False
 else:
     GPU_AVAILABLE = False
 
