@@ -81,7 +81,7 @@ class MessageBundle:
         recv_slice: Tuple[slice],
     ) -> None:
         """Add message information to the bundle.
-        
+
         Send array & rotation parameter for later packing.
         Recv array for later unpacking. Pop a recv Buffer for transfer.
         Recv buffer is held by the class.
@@ -248,6 +248,20 @@ class MessageBundleCPU(MessageBundle):
                 x_info.quantity.dims,
                 x_info.quantity.np,
             )
+
+            # If we rotated the data, we need to rotate the indexation
+            # to the data
+            rotation = (-x_info.send_clockwise_rotation) % 4
+            if rotation == 1 or rotation == 3:
+                x_info.linear_size, y_info.linear_size = (
+                    y_info.linear_size,
+                    x_info.linear_size,
+                )
+                x_info.recv_slices, y_info.recv_slices = (
+                    y_info.recv_slices,
+                    x_info.recv_slices,
+                )
+
             contiguous_view = x_info.quantity.np.ascontiguousarray(x_view)
             self._send_buffer.assign_from(
                 x_info.quantity.np.reshape(contiguous_view, x_info.linear_size),
