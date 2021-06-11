@@ -16,17 +16,6 @@ class Boundary:
     orientation of the axes in from_rank to the orientation of the axes in to_rank.
     """
 
-    def rotate(self, y_data, x_data):
-        if self.n_clockwise_rotations % 4 == 0:
-            pass
-        elif self.n_clockwise_rotations % 4 == 1:
-            y_data[:], x_data[:] = -x_data[:], y_data[:]
-        elif self.n_clockwise_rotations % 4 == 2:
-            y_data[:] = -y_data[:]
-            x_data[:] = -x_data[:]
-        elif self.n_clockwise_rotations % 4 == 3:
-            y_data, x_data = x_data[:], -y_data[:]
-
     def send_view(self, quantity: Quantity, n_points: int):
         """Return a sliced view of points which should be sent at this boundary.
 
@@ -44,6 +33,15 @@ class Boundary:
             n_points: the width of boundary to include
         """
         return self._view(quantity, n_points, interior=False)
+
+    def send_slice(self, quantity: Quantity, n_points: int):
+        return self._slice(quantity, n_points, interior=True)
+
+    def recv_slice(self, quantity: Quantity, n_points: int):
+        return self._slice(quantity, n_points, interior=False)
+
+    def _slice(self, quantity: Quantity, n_points: int, interior: bool):
+        raise NotImplementedError()
 
     def _view(self, quantity: Quantity, n_points: int, interior: bool):
         """Return a sliced view of points in the given quantity at this boundary.
@@ -64,7 +62,11 @@ class SimpleBoundary(Boundary):
     boundary_type: int
 
     def _view(self, quantity: Quantity, n_points: int, interior: bool):
-        boundary_slice = get_boundary_slice(
+        boundary_slice = self._slice(quantity, n_points, interior)
+        return quantity.data[tuple(boundary_slice)]
+
+    def _slice(self, quantity: Quantity, n_points: int, interior: bool):
+        return get_boundary_slice(
             quantity.dims,
             quantity.origin,
             quantity.extent,
@@ -73,4 +75,3 @@ class SimpleBoundary(Boundary):
             n_points,
             interior,
         )
-        return quantity.data[tuple(boundary_slice)]

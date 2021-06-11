@@ -74,13 +74,19 @@ class Buffer:
         self,
         destination_array: np.ndarray,
         buffer_slice: IndexExpression = np.index_exp[:],
+        buffer_reshape: IndexExpression = None,
     ):
         """Assign internal array to destination_array.
 
         Args:
             destination_array: target ndarray
         """
-        safe_assign_array(destination_array, self.array[buffer_slice])
+        if buffer_reshape is None:
+            safe_assign_array(destination_array, self.array[buffer_slice])
+        else:
+            safe_assign_array(
+                destination_array, np.reshape(self.array[buffer_slice], buffer_reshape)
+            )
 
     def assign_from(
         self, source_array: np.ndarray, buffer_slice: IndexExpression = np.index_exp[:]

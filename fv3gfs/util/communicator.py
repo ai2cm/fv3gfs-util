@@ -1,13 +1,14 @@
-from typing import Tuple, Mapping, Optional, Sequence, cast, List
+from typing import Tuple, Mapping, Optional, Sequence, cast, List, Dict
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
 from .boundary import Boundary
-from .rotate import rotate_scalar_data, rotate_vector_data
+from .rotate import rotate_scalar_data
 from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._timing import Timer, NullTimer
 from .types import AsyncRequest, NumpyModule
 from .utils import device_synchronize
+from .message import MessageBundle
 import logging
 import numpy as np
 
@@ -19,6 +20,11 @@ __all__ = [
 ]
 
 logger = logging.getLogger("fv3gfs.util")
+
+_HaloSendTuple = Tuple[AsyncRequest, Buffer]
+_HaloRequestSendList = List[_HaloSendTuple]
+_HaloRecvTuple = Tuple[AsyncRequest, Buffer, np.ndarray]
+_HaloRequestRecvList = List[_HaloRecvTuple]
 
 
 def bcast_metadata_list(comm, quantity_list):
@@ -36,20 +42,6 @@ def bcast_metadata(comm, array):
     return bcast_metadata_list(comm, [array])[0]
 
 
-class FunctionRequest:
-    def __init__(self, function):
-        self._function = function
-
-    def wait(self):
-        self._function()
-
-
-_HaloSendTuple = Tuple[AsyncRequest, "Buffer"]
-_HaloRequestSendList = List[_HaloSendTuple]
-_HaloRecvTuple = Tuple[AsyncRequest, "Buffer", np.ndarray]
-_HaloRequestRecvList = List[_HaloRecvTuple]
-
-
 class HaloUpdateRequest:
     """Asynchronous request object for halo updates."""
 
@@ -60,13 +52,11 @@ class HaloUpdateRequest:
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
-
         Args:
             send_data: a tuple of the MPI request and the buffer sent
             recv_data: a tuple of the MPI request, the temporary message buffer and
             the destination buffer
             timer: optional, time the wait & unpack of a halo exchange
-
         """
         self._send_data = send_data
         self._recv_data = recv_data
@@ -74,7 +64,6 @@ class HaloUpdateRequest:
 
     def wait(self):
         """Wait & unpack data into destination buffers
-
         Clean up by inserting back all buffers back in cache
         for potential reuse
         """
@@ -89,6 +78,48 @@ class HaloUpdateRequest:
             with self._timer.clock("unpack"):
                 transfer_buffer.assign_to(destination_array)
                 Buffer.push_to_cache(transfer_buffer)
+
+
+class HaloUpdateRequestMessage:
+    """Asynchronous request object for halo updates."""
+
+    def __init__(
+        self,
+        send_requests: List[AsyncRequest],
+        recv_requests: List[AsyncRequest],
+        messages: Dict[int, MessageBundle],
+        timer: Optional[Timer] = None,
+    ):
+        """Build a halo request.
+
+        Args:
+            send_data: a tuple of the MPI request and the buffer sent
+            recv_data: a tuple of the MPI request, the temporary message buffer and
+            the destination buffer
+            timer: optional, time the wait & unpack of a halo exchange
+
+        """
+        self._send_requests = send_requests
+        self._recv_requests = recv_requests
+        self._messages = messages
+        self._timer: Timer = timer if timer is not None else NullTimer()
+
+    def wait(self):
+        """Wait & unpack data into destination buffers
+
+        Clean up by inserting back all buffers back in cache
+        for potential reuse
+        """
+        with self._timer.clock("wait"):
+            for send_req in self._send_requests:
+                send_req.wait()
+            for recv_req in self._recv_requests:
+                recv_req.wait()
+        with self._timer.clock("unpack"):
+            for _to_rank, message in self._messages.items():
+                message.async_unpack()
+            for _to_rank, message in self._messages.items():
+                message.synchronize()
 
 
 class Communicator:
@@ -472,60 +503,75 @@ class CubedSphereCommunicator(Communicator):
             raise ValueError("cannot perform a halo update on zero halo points")
         CubedSphereCommunicator._device_synchronize()
         tag = self._get_halo_tag()
-        recv_data = self._Irecv_halos(quantity, n_points, tag=tag)
-        send_data = self._Isend_halos(quantity, n_points, tag=tag)
-        return HaloUpdateRequest(send_data, recv_data, self.timer)
 
-    def _Isend_halos(
-        self, quantity: Quantity, n_points: int, tag: int = 0
-    ) -> _HaloRequestSendList:
-        send_data = []
-        for boundary in self.boundaries.values():
+        # Prepare messages
+        # - message dict index on rank of receiver
+        # - queue for packing
+        # - allocate internal message memory
+        messages = {}
+        with self.timer.clock("pack"):
+            for boundary in self.boundaries.values():
+                message = self._lazy_get_messages(messages, boundary, quantity)
+                self._queue_scalar(message, quantity, boundary, n_points)
+            self._allocate_messages(messages)
+
+        # Issue asynchroneous transfer commands
+        # Includes pre-network call message packing
+        return self._Isend_Irecv_halos(messages, tag)
+
+    def _lazy_get_messages(
+        self, messages: Dict[int, MessageBundle], boundary: Boundary, quantity: Quantity
+    ) -> MessageBundle:
+        if boundary.to_rank not in messages:
+            messages[boundary.to_rank] = MessageBundle.get_from_quantity_module(
+                self._maybe_force_cpu(quantity.np)
+            )
+        return messages[boundary.to_rank]
+
+    def _queue_scalar(
+        self,
+        message: MessageBundle,
+        quantity: Quantity,
+        boundary: Boundary,
+        n_points: int,
+    ):
+        message.queue_scalar_message(
+            quantity,
+            boundary.send_slice(quantity, n_points),
+            boundary.n_clockwise_rotations,
+            boundary.recv_slice(quantity, n_points),
+        )
+
+    def _allocate_messages(self, messages: Dict[int, MessageBundle]):
+        for _to_rank, message in messages.items():
+            message.allocate()
+
+    def _Isend_Irecv_halos(
+        self, messages: Dict[int, MessageBundle], tag: int
+    ) -> HaloUpdateRequest:
+        with self.timer.clock("Irecv"):
+            recv_requests = []
+            for to_rank, message in messages.items():
+                recv_requests.append(
+                    self.comm.Irecv(
+                        message.get_recv_buffer().array, source=to_rank, tag=tag,
+                    )
+                )
+        send_requests = []
+        for to_rank, message in messages.items():
             with self.timer.clock("pack"):
-                source_view = boundary.send_view(quantity, n_points=n_points)
-                # sending data across the boundary will rotate the data
-                # n_clockwise_rotations times, due to the difference in axis orientation.\
-                # Thus we rotate that number of times counterclockwise before sending,
-                # to get the right final orientation
-                source_view = rotate_scalar_data(
-                    source_view,
-                    quantity.dims,
-                    quantity.np,
-                    -boundary.n_clockwise_rotations,
+                message.async_pack()
+        for to_rank, message in messages.items():
+            with self.timer.clock("Isend"):
+                message.synchronize()
+                send_requests.append(
+                    self.comm.Isend(
+                        message.get_send_buffer().array, dest=to_rank, tag=tag
+                    )
                 )
-            send_data.append(
-                self._Isend(
-                    self._maybe_force_cpu(quantity.np),
-                    source_view,
-                    dest=boundary.to_rank,
-                    tag=tag,
-                )
-            )
-        return send_data
-
-    def _Irecv_halos(
-        self, quantity: Quantity, n_points: int, tag: int = 0
-    ) -> _HaloRequestRecvList:
-        recv_data = []
-        for boundary_type, boundary in self.boundaries.items():
-            with self.timer.clock("unpack"):
-                dest_view = boundary.recv_view(quantity, n_points=n_points)
-                logger.debug(
-                    "finish_halo_update: retrieving boundary_type=%s shape=%s from_rank=%s to_rank=%s",
-                    boundary_type,
-                    dest_view.shape,
-                    boundary.to_rank,
-                    self.rank,
-                )
-            recv_data.append(
-                self._Irecv(
-                    self._maybe_force_cpu(quantity.np),
-                    dest_view,
-                    source=boundary.to_rank,
-                    tag=tag,
-                )
-            )
-        return recv_data
+        return HaloUpdateRequestMessage(
+            send_requests, recv_requests, messages, self.timer
+        )
 
     def finish_halo_update(self, quantity: Quantity, n_points: int):
         """Deprecated, do not use."""
@@ -619,57 +665,40 @@ class CubedSphereCommunicator(Communicator):
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         CubedSphereCommunicator._device_synchronize()
-        tag1, tag2 = self._get_halo_tag(), self._get_halo_tag()
-        send_data: _HaloRequestSendList = self._Isend_vector_halos(
-            x_quantity, y_quantity, n_points, tags=(tag1, tag2)
-        )
-        recv_data: _HaloRequestRecvList = self._Irecv_halos(
-            x_quantity, n_points, tag=tag1
-        )
-        recv_data.extend(self._Irecv_halos(y_quantity, n_points, tag=tag2))
-        return HaloUpdateRequest(send_data, recv_data, self.timer)
+        tag = self._get_halo_tag()
 
-    def _Isend_vector_halos(
-        self, x_quantity, y_quantity, n_points, tags: Tuple[int, int] = (0, 0)
-    ) -> _HaloRequestSendList:
-        send_data = []
-        for _boundary_type, boundary in self.boundaries.items():
-            with self.timer.clock("pack"):
-                x_data = boundary.send_view(x_quantity, n_points=n_points)
-                y_data = boundary.send_view(y_quantity, n_points=n_points)
-                logger.debug("%s %s", x_data.shape, y_data.shape)
-                x_data, y_data = rotate_vector_data(
-                    x_data,
-                    y_data,
-                    -boundary.n_clockwise_rotations,
-                    x_quantity.dims,
-                    x_quantity.np,
-                )
-                logger.debug(
-                    "%s %s %s %s %s",
-                    boundary.from_rank,
-                    boundary.to_rank,
-                    boundary.n_clockwise_rotations,
-                    x_data.shape,
-                    y_data.shape,
-                )
-            send_data.append(
-                self._Isend(
-                    self._maybe_force_cpu(x_quantity.np),
-                    x_data,
-                    dest=boundary.to_rank,
-                    tag=tags[0],
-                )
-            )
-            send_data.append(
-                self._Isend(
-                    self._maybe_force_cpu(y_quantity.np),
-                    y_data,
-                    dest=boundary.to_rank,
-                    tag=tags[1],
-                )
-            )
-        return send_data
+        # Prepare messages
+        # - message dict index on rank of receiver
+        # - queue for packing
+        # - allocate internal message memory
+        messages = {}
+        with self.timer.clock("pack"):
+            for boundary in self.boundaries.values():
+                message = self._lazy_get_messages(messages, boundary, x_quantity)
+                self._queue_vector(message, x_quantity, y_quantity, boundary, n_points)
+            self._allocate_messages(messages)
+
+        # Issue asynchroneous transfer commands
+        # Includes pre-network call message packing
+        return self._Isend_Irecv_halos(messages, tag)
+
+    def _queue_vector(
+        self,
+        message: MessageBundle,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        boundary: Boundary,
+        n_points: int,
+    ):
+        message.queue_vector_message(
+            x_quantity,
+            boundary.send_slice(x_quantity, n_points),
+            y_quantity,
+            boundary.send_slice(y_quantity, n_points),
+            boundary.n_clockwise_rotations,
+            boundary.recv_slice(x_quantity, n_points),
+            boundary.recv_slice(y_quantity, n_points),
+        )
 
     def _Isend_vector_shared_boundary(
         self, x_quantity, y_quantity, tag=0
@@ -772,15 +801,6 @@ class CubedSphereCommunicator(Communicator):
         with self.timer.clock("Isend"):
             request = self.comm.Isend(buffer.array, **kwargs)
         return (request, buffer)
-
-    def _Send(self, numpy_module, in_array, **kwargs):
-        with send_buffer(numpy_module.empty, in_array, timer=self.timer) as sendbuf:
-            self.comm.Send(sendbuf, **kwargs)
-
-    def _Recv(self, numpy_module, out_array, **kwargs):
-        with recv_buffer(numpy_module.empty, out_array, timer=self.timer) as recvbuf:
-            with self.timer.clock("Recv"):
-                self.comm.Recv(recvbuf, **kwargs)
 
     def _Irecv(self, numpy_module, out_array, **kwargs) -> _HaloRecvTuple:
         # Prepare a contiguous buffer to receive data
