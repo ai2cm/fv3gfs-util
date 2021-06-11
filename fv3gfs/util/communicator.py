@@ -474,13 +474,16 @@ class CubedSphereCommunicator(Communicator):
         return recv_quantity
 
     def halo_update(self, quantity: Quantity, n_points: int):
+        self.halo_update_aggregate([quantity], n_points)
+
+    def halo_update_aggregate(self, quantities: List[Quantity], n_points: int):
         """Perform a halo update on a quantity.
 
         Args:
             quantity: the quantity to be updated
             n_points: how many halo points to update, starting from the interior
         """
-        req = self.start_halo_update(quantity, n_points)
+        req = self.start_halo_update(quantities, n_points)
         req.wait()
 
     @staticmethod
@@ -490,6 +493,11 @@ class CubedSphereCommunicator(Communicator):
         device_synchronize()
 
     def start_halo_update(self, quantity: Quantity, n_points: int) -> HaloUpdateRequest:
+        return self.start_halo_update_aggregate([quantity], n_points)
+
+    def start_halo_update_aggregate(
+        self, quantities: List[Quantity], n_points: int
+    ) -> HaloUpdateRequest:
         """Start an asynchronous halo update on a quantity.
 
         Args:
@@ -511,8 +519,9 @@ class CubedSphereCommunicator(Communicator):
         messages = {}
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
-                message = self._lazy_get_messages(messages, boundary, quantity)
-                self._queue_scalar(message, quantity, boundary, n_points)
+                for quantity in quantities:
+                    message = self._lazy_get_messages(messages, boundary, quantity)
+                    self._queue_scalar(message, quantity, boundary, n_points)
             self._allocate_messages(messages)
 
         # Issue asynchroneous transfer commands
@@ -583,6 +592,11 @@ class CubedSphereCommunicator(Communicator):
     def vector_halo_update(
         self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
+        self.vector_halo_update_aggregate([x_quantity], [y_quantity], n_points)
+
+    def vector_halo_update_aggregate(
+        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
+    ):
         """Perform a halo update of a horizontal vector quantity.
 
         Assumes the x and y dimension indices are the same between the two quantities.
@@ -592,7 +606,9 @@ class CubedSphereCommunicator(Communicator):
             y_quantity: the y-component quantity to be halo updated
             n_points: how many halo points to update, starting at the interior
         """
-        req = self.start_vector_halo_update(x_quantity, y_quantity, n_points)
+        req = self.start_vector_halo_update_aggregate(
+            x_quantities, y_quantities, n_points
+        )
         req.wait()
 
     def start_synchronize_vector_interfaces(
@@ -649,6 +665,13 @@ class CubedSphereCommunicator(Communicator):
 
     def start_vector_halo_update(
         self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+    ):
+        return self.start_vector_halo_update_aggregate(
+            [x_quantity], [y_quantity], n_points
+        )
+
+    def start_vector_halo_update_aggregate(
+        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
     ) -> HaloUpdateRequest:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -674,8 +697,11 @@ class CubedSphereCommunicator(Communicator):
         messages = {}
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
-                message = self._lazy_get_messages(messages, boundary, x_quantity)
-                self._queue_vector(message, x_quantity, y_quantity, boundary, n_points)
+                for x_quantity, y_quantity in zip(x_quantities, y_quantities):
+                    message = self._lazy_get_messages(messages, boundary, x_quantity)
+                    self._queue_vector(
+                        message, x_quantity, y_quantity, boundary, n_points
+                    )
             self._allocate_messages(messages)
 
         # Issue asynchroneous transfer commands
