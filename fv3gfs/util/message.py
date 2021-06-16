@@ -5,6 +5,7 @@ from .types import NumpyModule
 from typing import List, Tuple, Optional
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
+from .utils import flatten
 import numpy as np
 
 try:
@@ -241,7 +242,7 @@ class MessageBundleCPU(MessageBundle):
                 -x_info.send_clockwise_rotation,
             )
             self._send_buffer.assign_from(
-                source_view.flatten("C"),
+                flatten(source_view),
                 buffer_slice=np.index_exp[offset : offset + message_size],
             )
             offset += message_size
@@ -264,12 +265,12 @@ class MessageBundleCPU(MessageBundle):
 
             # Pack X/Y messages in the buffer
             self._send_buffer.assign_from(
-                x_view.flatten("C"),
+                flatten(x_view),
                 buffer_slice=np.index_exp[offset : offset + x_view.size],
             )
             offset += x_view.size
             self._send_buffer.assign_from(
-                y_view.flatten("C"),
+                flatten(y_view),
                 buffer_slice=np.index_exp[offset : offset + y_view.size],
             )
             offset += y_view.size
@@ -357,7 +358,7 @@ class MessageBundleGPU(MessageBundle):
                 -x_info.send_clockwise_rotation,
             )
             self._send_buffer.assign_from(
-                source_view.flatten(),
+                flatten(source_view),
                 buffer_slice=np.index_exp[offset : offset + message_size],
             )
             offset += message_size
@@ -380,12 +381,12 @@ class MessageBundleGPU(MessageBundle):
 
             # Pack X/Y messages in the buffer
             self._send_buffer.assign_from(
-                x_view.flatten(),
+                flatten(x_view),
                 buffer_slice=np.index_exp[offset : offset + x_view.size],
             )
             offset += x_view.size
             self._send_buffer.assign_from(
-                y_view.flatten(),
+                flatten(y_view),
                 buffer_slice=np.index_exp[offset : offset + y_view.size],
             )
             offset += y_view.size
