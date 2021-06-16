@@ -131,7 +131,7 @@ def quantity(dims, units, origin, extent, shape, numpy, dtype):
 
 
 def test_message_allocate(quantity):
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+    message = MessageBundle.get_from_quantity_module(0, quantity.np)
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
         quantity.origin,
@@ -171,7 +171,7 @@ def test_message_allocate(quantity):
 
 def test_message_scalar_pack_unpack(quantity):
     original_quantity = copy.deepcopy(quantity)
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+    message = MessageBundle.get_from_quantity_module(0, quantity.np)
 
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
@@ -210,7 +210,7 @@ def test_message_vector_pack_unpack(quantity):
     original_quantity = copy.deepcopy(quantity)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+    message = MessageBundle.get_from_quantity_module(0, quantity.np)
 
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,

@@ -41,7 +41,23 @@ class MessageBundleType(Enum):
 
 
 class MessageBundle:
-    """Pack/unpack multiple nD messages in/from a single linear buffer."""
+    """Pack/unpack multiple nD array into/from a single buffer.
+    
+    The class is responsible for packing & unpacking, not communication.
+    Order of operations:
+    - get MessageBundle via get_from_quantity_module
+    (user should re-use the same if it goes to the same destination)
+    - queue N messages via queue_scalar & queue_vector
+    - allocate (WARNING: do not queue after allocation!)
+    [From here get_recv_buffer() is valid]
+    - async_pack
+    - synchronize
+    [From here get_send_buffer() is valid]
+    ... user should communicate the buffers...
+    - async_unpack
+    - synchronize
+    [All buffers return to their buffer cache, therefore invalid]
+    """
 
     _send_buffer: Optional[Buffer] = None
     _recv_buffer: Optional[Buffer] = None
