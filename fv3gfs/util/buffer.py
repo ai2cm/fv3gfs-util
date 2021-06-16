@@ -85,7 +85,8 @@ class Buffer:
             safe_assign_array(destination_array, self.array[buffer_slice])
         else:
             safe_assign_array(
-                destination_array, np.reshape(self.array[buffer_slice], buffer_reshape)
+                destination_array,
+                np.reshape(self.array[buffer_slice], buffer_reshape, order="C"),
             )
 
     def assign_from(

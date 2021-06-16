@@ -14,6 +14,7 @@ except ImportError:
 
 
 def _slices_length(slices: Tuple[slice]) -> int:
+    """Compute linear size from slices"""
     length = 1
     for s in slices:
         assert s.step is None
@@ -29,7 +30,6 @@ class MessageMetadata:
     send_slices: Tuple[slice]
     send_clockwise_rotation: int
     recv_slices: Tuple[slice]
-    linear_size: int
 
 
 class MessageBundleType(Enum):
@@ -51,7 +51,8 @@ class MessageBundle:
 
     _type: MessageBundleType = MessageBundleType.UNKNOWN
 
-    def __init__(self, np_module: NumpyModule) -> None:
+    def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
+        self.to_rank = to_rank
         self._np_module = np_module
         self._x_infos = []
         self._y_infos = []
@@ -63,11 +64,13 @@ class MessageBundle:
         assert self._recv_buffer is None
 
     @staticmethod
-    def get_from_quantity_module(qty_module: NumpyModule) -> "MessageBundle":
+    def get_from_quantity_module(
+        to_rank: int, qty_module: NumpyModule
+    ) -> "MessageBundle":
         if qty_module is np:
-            return MessageBundleCPU(np)
+            return MessageBundleCPU(to_rank, np)
         elif qty_module is cp:
-            return MessageBundleGPU(cp)
+            return MessageBundleGPU(to_rank, cp)
 
         raise NotImplementedError(
             f"Quantity module {qty_module} has no MessageBundle implemented"
@@ -102,7 +105,6 @@ class MessageBundle:
             MessageMetadata(
                 quantity=quantity,
                 send_slices=send_slice,
-                linear_size=0,
                 send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=recv_slice,
             )
@@ -132,7 +134,6 @@ class MessageBundle:
             MessageMetadata(
                 quantity=x_quantity,
                 send_slices=x_send_slice,
-                linear_size=0,
                 send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=x_recv_slice,
             )
@@ -141,8 +142,7 @@ class MessageBundle:
             MessageMetadata(
                 quantity=y_quantity,
                 send_slices=y_send_slice,
-                linear_size=0,
-                send_clockwise_rotation=-n_clockwise_rotation,
+                send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=y_recv_slice,
             )
         )
@@ -162,13 +162,11 @@ class MessageBundle:
         buffer_size = 0
         dtype = None
         for x_info in self._x_infos:
-            x_info.linear_size = _slices_length(x_info.send_slices)
-            buffer_size += x_info.linear_size
+            buffer_size += _slices_length(x_info.send_slices)
             dtype = x_info.quantity.metadata.dtype
         if self._type is MessageBundleType.VECTOR:
             for y_info in self._y_infos:
-                y_info.linear_size = _slices_length(y_info.send_slices)
-                buffer_size += y_info.linear_size
+                buffer_size += _slices_length(y_info.send_slices)
 
         # Demand a properly size buffers
         self._send_buffer = Buffer.pop_from_cache(
@@ -179,18 +177,17 @@ class MessageBundle:
         )
 
     def async_pack(self):
-        """Pack all queued messages into a send Buffer.
+        """Pack all queued messages into a single send Buffer.
 
-        This guarantees the send Buffer is ready for MPI communication.
-        The send Buffer is held by the class."""
+        Implementation should guarantee the send Buffer is ready for MPI communication.
+        The send Buffer is held by this class."""
         raise NotImplementedError()
 
     def async_unpack(self):
         """Unpack the buffer into destination arrays.
 
-        This guarantees transfer is done and data ready to use.
-        Once unpacking is done, recv & send Buffers are
-        reinserted into the cache for reuse."""
+        Implementation should guarantee transfer is done.
+        Implementation should return recv & send Buffers to the cache for reuse."""
         raise NotImplementedError()
 
     def synchronize(self):
@@ -216,6 +213,7 @@ class MessageBundleCPU(MessageBundle):
     def _pack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
+            message_size = _slices_length(x_info.send_slices)
             # sending data across the boundary will rotate the data
             # n_clockwise_rotations times, due to the difference in axis orientation.\
             # Thus we rotate that number of times counterclockwise before sending,
@@ -226,12 +224,11 @@ class MessageBundleCPU(MessageBundle):
                 x_info.quantity.np,
                 -x_info.send_clockwise_rotation,
             )
-            contiguous_view = x_info.quantity.np.ascontiguousarray(source_view)
             self._send_buffer.assign_from(
-                x_info.quantity.np.reshape(contiguous_view, x_info.linear_size),
-                buffer_slice=np.index_exp[offset : offset + x_info.linear_size],
+                source_view.flatten("C"),
+                buffer_slice=np.index_exp[offset : offset + message_size],
             )
-            offset += x_info.linear_size
+            offset += message_size
 
     def _pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -249,31 +246,17 @@ class MessageBundleCPU(MessageBundle):
                 x_info.quantity.np,
             )
 
-            # If we rotated the data, we need to rotate the indexation
-            # to the data
-            rotation = (-x_info.send_clockwise_rotation) % 4
-            if rotation == 1 or rotation == 3:
-                x_info.linear_size, y_info.linear_size = (
-                    y_info.linear_size,
-                    x_info.linear_size,
-                )
-                x_info.recv_slices, y_info.recv_slices = (
-                    y_info.recv_slices,
-                    x_info.recv_slices,
-                )
-
-            contiguous_view = x_info.quantity.np.ascontiguousarray(x_view)
+            # Pack X/Y messages in the buffer
             self._send_buffer.assign_from(
-                x_info.quantity.np.reshape(contiguous_view, x_info.linear_size),
-                buffer_slice=np.index_exp[offset : offset + x_info.linear_size],
+                x_view.flatten("C"),
+                buffer_slice=np.index_exp[offset : offset + x_view.size],
             )
-            offset += x_info.linear_size
-            contiguous_view = y_info.quantity.np.ascontiguousarray(y_view)
+            offset += x_view.size
             self._send_buffer.assign_from(
-                y_info.quantity.np.reshape(contiguous_view, y_info.linear_size),
-                buffer_slice=np.index_exp[offset : offset + y_info.linear_size],
+                y_view.flatten("C"),
+                buffer_slice=np.index_exp[offset : offset + y_view.size],
             )
-            offset += y_info.linear_size
+            offset += y_view.size
 
     def async_unpack(self):
         # Unpack per type
@@ -296,30 +279,33 @@ class MessageBundleCPU(MessageBundle):
         offset = 0
         for x_info in self._x_infos:
             quantity_view = x_info.quantity.data[x_info.recv_slices]
+            message_size = _slices_length(x_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + x_info.linear_size],
+                buffer_slice=np.index_exp[offset : offset + message_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += x_info.linear_size
+            offset += message_size
 
     def _unpack_vector(self):
         offset = 0
         for x_info, y_info in zip(self._x_infos, self._y_infos):
             quantity_view = x_info.quantity.data[x_info.recv_slices]
+            message_size = _slices_length(x_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + x_info.linear_size],
+                buffer_slice=np.index_exp[offset : offset + message_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += x_info.linear_size
+            offset += message_size
             quantity_view = y_info.quantity.data[y_info.recv_slices]
+            message_size = _slices_length(y_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + y_info.linear_size],
+                buffer_slice=np.index_exp[offset : offset + message_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += y_info.linear_size
+            offset += message_size
 
 
 class MessageBundleGPU(MessageBundle):

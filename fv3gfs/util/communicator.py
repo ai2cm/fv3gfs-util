@@ -87,7 +87,7 @@ class HaloUpdateRequestMessage:
         self,
         send_requests: List[AsyncRequest],
         recv_requests: List[AsyncRequest],
-        messages: Dict[int, MessageBundle],
+        messages: List[MessageBundle],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
@@ -116,9 +116,9 @@ class HaloUpdateRequestMessage:
             for recv_req in self._recv_requests:
                 recv_req.wait()
         with self._timer.clock("unpack"):
-            for _to_rank, message in self._messages.items():
+            for message in self._messages:
                 message.async_unpack()
-            for _to_rank, message in self._messages.items():
+            for message in self._messages:
                 message.synchronize()
 
 
@@ -201,7 +201,10 @@ class Communicator:
                 )
         else:
             self._Scatter(
-                metadata.np, None, recv_quantity.view[:], root=constants.ROOT_RANK,
+                metadata.np,
+                None,
+                recv_quantity.view[:],
+                root=constants.ROOT_RANK,
             )
         return recv_quantity
 
@@ -277,7 +280,10 @@ class Communicator:
                 result = recv_quantity
         else:
             self._Gather(
-                send_quantity.np, send_quantity.view[:], None, root=constants.ROOT_RANK,
+                send_quantity.np,
+                send_quantity.view[:],
+                None,
+                root=constants.ROOT_RANK,
             )
             result = None
         return result
@@ -483,7 +489,7 @@ class CubedSphereCommunicator(Communicator):
             quantity: the quantity to be updated
             n_points: how many halo points to update, starting from the interior
         """
-        req = self.start_halo_update(quantities, n_points)
+        req = self.start_halo_update_aggregate(quantities, n_points)
         req.wait()
 
     @staticmethod
@@ -516,7 +522,7 @@ class CubedSphereCommunicator(Communicator):
         # - message dict index on rank of receiver
         # - queue for packing
         # - allocate internal message memory
-        messages = {}
+        messages = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for quantity in quantities:
@@ -529,13 +535,21 @@ class CubedSphereCommunicator(Communicator):
         return self._Isend_Irecv_halos(messages, tag)
 
     def _lazy_get_messages(
-        self, messages: Dict[int, MessageBundle], boundary: Boundary, quantity: Quantity
+        self,
+        messages: List[MessageBundle],
+        boundary: Boundary,
+        quantity: Quantity,
     ) -> MessageBundle:
-        if boundary.to_rank not in messages:
-            messages[boundary.to_rank] = MessageBundle.get_from_quantity_module(
-                self._maybe_force_cpu(quantity.np)
+        to_rank_messages = [x for x in messages if x.to_rank == boundary.to_rank]
+        assert len(to_rank_messages) <= 1
+        if len(to_rank_messages) == 0:
+            messages.append(
+                MessageBundle.get_from_quantity_module(
+                    boundary.to_rank, self._maybe_force_cpu(quantity.np)
+                )
             )
-        return messages[boundary.to_rank]
+            to_rank_messages = [x for x in messages if x.to_rank == boundary.to_rank]
+        return to_rank_messages[0]
 
     def _queue_scalar(
         self,
@@ -551,31 +565,33 @@ class CubedSphereCommunicator(Communicator):
             boundary.recv_slice(quantity, n_points),
         )
 
-    def _allocate_messages(self, messages: Dict[int, MessageBundle]):
-        for _to_rank, message in messages.items():
+    def _allocate_messages(self, messages: List[MessageBundle]):
+        for message in messages:
             message.allocate()
 
     def _Isend_Irecv_halos(
-        self, messages: Dict[int, MessageBundle], tag: int
+        self, messages: List[MessageBundle], tag: int
     ) -> HaloUpdateRequest:
         with self.timer.clock("Irecv"):
             recv_requests = []
-            for to_rank, message in messages.items():
+            for message in messages:
                 recv_requests.append(
                     self.comm.Irecv(
-                        message.get_recv_buffer().array, source=to_rank, tag=tag,
+                        message.get_recv_buffer().array,
+                        source=message.to_rank,
+                        tag=tag,
                     )
                 )
         send_requests = []
-        for to_rank, message in messages.items():
+        for message in messages:
             with self.timer.clock("pack"):
                 message.async_pack()
-        for to_rank, message in messages.items():
+        for message in messages:
             with self.timer.clock("Isend"):
                 message.synchronize()
                 send_requests.append(
                     self.comm.Isend(
-                        message.get_send_buffer().array, dest=to_rank, tag=tag
+                        message.get_send_buffer().array, dest=message.to_rank, tag=tag
                     )
                 )
         return HaloUpdateRequestMessage(
@@ -590,12 +606,18 @@ class CubedSphereCommunicator(Communicator):
         )
 
     def vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ):
         self.vector_halo_update_aggregate([x_quantity], [y_quantity], n_points)
 
     def vector_halo_update_aggregate(
-        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
+        self,
+        x_quantities: List[Quantity],
+        y_quantities: List[Quantity],
+        n_points: int,
     ):
         """Perform a halo update of a horizontal vector quantity.
 
@@ -664,14 +686,20 @@ class CubedSphereCommunicator(Communicator):
         req.wait()
 
     def start_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ):
         return self.start_vector_halo_update_aggregate(
             [x_quantity], [y_quantity], n_points
         )
 
     def start_vector_halo_update_aggregate(
-        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
+        self,
+        x_quantities: List[Quantity],
+        y_quantities: List[Quantity],
+        n_points: int,
     ) -> HaloUpdateRequest:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -694,7 +722,7 @@ class CubedSphereCommunicator(Communicator):
         # - message dict index on rank of receiver
         # - queue for packing
         # - allocate internal message memory
-        messages = {}
+        messages = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for x_quantity, y_quantity in zip(x_quantities, y_quantities):
@@ -838,7 +866,10 @@ class CubedSphereCommunicator(Communicator):
         return (recv_request, buffer, out_array)
 
     def finish_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        n_points: int,
     ):
         """Deprecated, do not use."""
         raise NotImplementedError(
