@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from .buffer import Buffer
 from .quantity import Quantity
 from .types import NumpyModule
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
 import numpy as np
@@ -43,8 +43,8 @@ class MessageBundleType(Enum):
 class MessageBundle:
     """Pack/unpack multiple nD messages in/from a single linear buffer."""
 
-    _send_buffer: Buffer = None
-    _recv_buffer: Buffer = None
+    _send_buffer: Optional[Buffer] = None
+    _recv_buffer: Optional[Buffer] = None
 
     _x_infos: List[MessageMetadata]
     _y_infos: List[MessageMetadata]
@@ -113,12 +113,12 @@ class MessageBundle:
     def queue_vector_message(
         self,
         x_quantity: Quantity,
-        x_send_slice: List[slice],
+        x_send_slice: Tuple[slice],
         y_quantity: Quantity,
-        y_send_slice: List[slice],
+        y_send_slice: Tuple[slice],
         n_clockwise_rotation: int,
-        x_recv_slice: List[slice],
-        y_recv_slice: List[slice],
+        x_recv_slice: Tuple[slice],
+        y_recv_slice: Tuple[slice],
     ) -> None:
         assert (
             self._type == MessageBundleType.VECTOR

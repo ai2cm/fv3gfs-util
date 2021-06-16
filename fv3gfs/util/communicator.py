@@ -492,12 +492,14 @@ class CubedSphereCommunicator(Communicator):
         # this is a method so we can profile it separately from other device syncs
         device_synchronize()
 
-    def start_halo_update(self, quantity: Quantity, n_points: int) -> HaloUpdateRequest:
+    def start_halo_update(
+        self, quantity: Quantity, n_points: int
+    ) -> HaloUpdateRequestMessage:
         return self.start_halo_update_aggregate([quantity], n_points)
 
     def start_halo_update_aggregate(
         self, quantities: List[Quantity], n_points: int
-    ) -> HaloUpdateRequest:
+    ) -> HaloUpdateRequestMessage:
         """Start an asynchronous halo update on a quantity.
 
         Args:
@@ -516,7 +518,7 @@ class CubedSphereCommunicator(Communicator):
         # - message dict index on rank of receiver
         # - queue for packing
         # - allocate internal message memory
-        messages = []
+        messages: List[MessageBundle] = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for quantity in quantities:
@@ -562,7 +564,7 @@ class CubedSphereCommunicator(Communicator):
 
     def _Isend_Irecv_halos(
         self, messages: List[MessageBundle], tag: int
-    ) -> HaloUpdateRequest:
+    ) -> HaloUpdateRequestMessage:
         with self.timer.clock("Irecv"):
             recv_requests = []
             for message in messages:
@@ -618,9 +620,72 @@ class CubedSphereCommunicator(Communicator):
         )
         req.wait()
 
+    def start_vector_halo_update(
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+    ) -> HaloUpdateRequestMessage:
+        return self.start_vector_halo_update_aggregate(
+            [x_quantity], [y_quantity], n_points
+        )
+
+    def start_vector_halo_update_aggregate(
+        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
+    ) -> HaloUpdateRequestMessage:
+        """Start an asynchronous halo update of a horizontal vector quantity.
+
+        Assumes the x and y dimension indices are the same between the two quantities.
+
+        Args:
+            x_quantity: the x-component quantity to be halo updated
+            y_quantity: the y-component quantity to be halo updated
+            n_points: how many halo points to update, starting at the interior
+
+        Returns:
+            request: an asynchronous request object with a .wait() method
+        """
+        if n_points == 0:
+            raise ValueError("cannot perform a halo update on zero halo points")
+        CubedSphereCommunicator._device_synchronize()
+        tag = self._get_halo_tag()
+
+        # Prepare messages
+        # - message dict index on rank of receiver
+        # - queue for packing
+        # - allocate internal message memory
+        messages: List[MessageBundle] = []
+        with self.timer.clock("pack"):
+            for boundary in self.boundaries.values():
+                for x_quantity, y_quantity in zip(x_quantities, y_quantities):
+                    message = self._lazy_get_messages(messages, boundary, x_quantity)
+                    self._queue_vector(
+                        message, x_quantity, y_quantity, boundary, n_points
+                    )
+            self._allocate_messages(messages)
+
+        # Issue asynchroneous transfer commands
+        # Includes pre-network call message packing
+        return self._Isend_Irecv_halos(messages, tag)
+
+    def _queue_vector(
+        self,
+        message: MessageBundle,
+        x_quantity: Quantity,
+        y_quantity: Quantity,
+        boundary: Boundary,
+        n_points: int,
+    ):
+        message.queue_vector_message(
+            x_quantity,
+            boundary.send_slice(x_quantity, n_points),
+            y_quantity,
+            boundary.send_slice(y_quantity, n_points),
+            boundary.n_clockwise_rotations,
+            boundary.recv_slice(x_quantity, n_points),
+            boundary.recv_slice(y_quantity, n_points),
+        )
+
     def start_synchronize_vector_interfaces(
         self, x_quantity: Quantity, y_quantity: Quantity
-    ):
+    ) -> HaloUpdateRequest:
         """
         Synchronize shared points at the edges of a vector interface variable.
 
@@ -669,69 +734,6 @@ class CubedSphereCommunicator(Communicator):
         """
         req = self.start_synchronize_vector_interfaces(x_quantity, y_quantity)
         req.wait()
-
-    def start_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
-    ):
-        return self.start_vector_halo_update_aggregate(
-            [x_quantity], [y_quantity], n_points
-        )
-
-    def start_vector_halo_update_aggregate(
-        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
-    ) -> HaloUpdateRequest:
-        """Start an asynchronous halo update of a horizontal vector quantity.
-
-        Assumes the x and y dimension indices are the same between the two quantities.
-
-        Args:
-            x_quantity: the x-component quantity to be halo updated
-            y_quantity: the y-component quantity to be halo updated
-            n_points: how many halo points to update, starting at the interior
-
-        Returns:
-            request: an asynchronous request object with a .wait() method
-        """
-        if n_points == 0:
-            raise ValueError("cannot perform a halo update on zero halo points")
-        CubedSphereCommunicator._device_synchronize()
-        tag = self._get_halo_tag()
-
-        # Prepare messages
-        # - message dict index on rank of receiver
-        # - queue for packing
-        # - allocate internal message memory
-        messages = []
-        with self.timer.clock("pack"):
-            for boundary in self.boundaries.values():
-                for x_quantity, y_quantity in zip(x_quantities, y_quantities):
-                    message = self._lazy_get_messages(messages, boundary, x_quantity)
-                    self._queue_vector(
-                        message, x_quantity, y_quantity, boundary, n_points
-                    )
-            self._allocate_messages(messages)
-
-        # Issue asynchroneous transfer commands
-        # Includes pre-network call message packing
-        return self._Isend_Irecv_halos(messages, tag)
-
-    def _queue_vector(
-        self,
-        message: MessageBundle,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        boundary: Boundary,
-        n_points: int,
-    ):
-        message.queue_vector_message(
-            x_quantity,
-            boundary.send_slice(x_quantity, n_points),
-            y_quantity,
-            boundary.send_slice(y_quantity, n_points),
-            boundary.n_clockwise_rotations,
-            boundary.recv_slice(x_quantity, n_points),
-            boundary.recv_slice(y_quantity, n_points),
-        )
 
     def _Isend_vector_shared_boundary(
         self, x_quantity, y_quantity, tag=0
