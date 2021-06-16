@@ -325,8 +325,117 @@ class MessageBundleCPU(MessageBundle):
 
 
 class MessageBundleGPU(MessageBundle):
-    def pack(self):
-        return NotImplementedError()
+    def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
+        super().__init__(to_rank, np_module)
+        self._stream = cp.cuda.Stream(non_blocking=True)
 
-    def unpack(self):
-        return NotImplementedError()
+    def synchronize(self):
+        self._stream.synchronize()
+
+    def async_pack(self):
+        # Unpack per type
+        self._stream.use()
+        if self._type == MessageBundleType.SCALAR:
+            self._pack_scalar()
+        elif self._type == MessageBundleType.VECTOR:
+            self._pack_vector()
+        else:
+            raise RuntimeError(f"Unimplemented {self._type} message pack")
+
+    def _pack_scalar(self):
+        offset = 0
+        for x_info in self._x_infos:
+            message_size = _slices_length(x_info.send_slices)
+            # sending data across the boundary will rotate the data
+            # n_clockwise_rotations times, due to the difference in axis orientation.\
+            # Thus we rotate that number of times counterclockwise before sending,
+            # to get the right final orientation
+            source_view = rotate_scalar_data(
+                x_info.quantity.data[x_info.send_slices],
+                x_info.quantity.dims,
+                x_info.quantity.np,
+                -x_info.send_clockwise_rotation,
+            )
+            self._send_buffer.assign_from(
+                source_view.flatten(),
+                buffer_slice=np.index_exp[offset : offset + message_size],
+            )
+            offset += message_size
+
+    def _pack_vector(self):
+        assert len(self._x_infos) == len(self._y_infos)
+        offset = 0
+        for x_info, y_info in zip(self._x_infos, self._y_infos):
+            # sending data across the boundary will rotate the data
+            # n_clockwise_rotations times, due to the difference in axis orientation
+            # Thus we rotate that number of times counterclockwise before sending,
+            # to get the right final orientation
+            x_view, y_view = rotate_vector_data(
+                x_info.quantity.data[x_info.send_slices],
+                y_info.quantity.data[y_info.send_slices],
+                -x_info.send_clockwise_rotation,
+                x_info.quantity.dims,
+                x_info.quantity.np,
+            )
+
+            # Pack X/Y messages in the buffer
+            self._send_buffer.assign_from(
+                x_view.flatten(),
+                buffer_slice=np.index_exp[offset : offset + x_view.size],
+            )
+            offset += x_view.size
+            self._send_buffer.assign_from(
+                y_view.flatten(),
+                buffer_slice=np.index_exp[offset : offset + y_view.size],
+            )
+            offset += y_view.size
+
+    def async_unpack(self):
+        # Unpack per type
+        self._stream.use()
+        if self._type == MessageBundleType.SCALAR:
+            self._unpack_scalar()
+        elif self._type == MessageBundleType.VECTOR:
+            self._unpack_vector()
+        else:
+            raise RuntimeError(f"Unimplemented {self._type} message unpack")
+
+        self._recv_buffer.finalize_memory_transfer()
+
+        # Pop the buffers back in the cache
+        Buffer.push_to_cache(self._send_buffer)
+        self._send_buffer = None
+        Buffer.push_to_cache(self._recv_buffer)
+        self._recv_buffer = None
+
+    def _unpack_scalar(self):
+        offset = 0
+        for x_info in self._x_infos:
+            quantity_view = x_info.quantity.data[x_info.recv_slices]
+            message_size = _slices_length(x_info.recv_slices)
+            self._recv_buffer.assign_to(
+                quantity_view,
+                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_reshape=quantity_view.shape,
+            )
+            offset += message_size
+
+    def _unpack_vector(self):
+        offset = 0
+        for x_info, y_info in zip(self._x_infos, self._y_infos):
+            quantity_view = x_info.quantity.data[x_info.recv_slices]
+            message_size = _slices_length(x_info.recv_slices)
+            self._recv_buffer.assign_to(
+                quantity_view,
+                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_reshape=quantity_view.shape,
+            )
+            offset += message_size
+            quantity_view = y_info.quantity.data[y_info.recv_slices]
+            message_size = _slices_length(y_info.recv_slices)
+            self._recv_buffer.assign_to(
+                quantity_view,
+                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_reshape=quantity_view.shape,
+            )
+            offset += message_size
