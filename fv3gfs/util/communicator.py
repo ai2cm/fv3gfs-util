@@ -1,4 +1,4 @@
-from typing import Tuple, Mapping, Optional, Sequence, cast, List, Dict
+from typing import Tuple, Mapping, Optional, Sequence, cast, List
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
@@ -201,10 +201,7 @@ class Communicator:
                 )
         else:
             self._Scatter(
-                metadata.np,
-                None,
-                recv_quantity.view[:],
-                root=constants.ROOT_RANK,
+                metadata.np, None, recv_quantity.view[:], root=constants.ROOT_RANK,
             )
         return recv_quantity
 
@@ -280,10 +277,7 @@ class Communicator:
                 result = recv_quantity
         else:
             self._Gather(
-                send_quantity.np,
-                send_quantity.view[:],
-                None,
-                root=constants.ROOT_RANK,
+                send_quantity.np, send_quantity.view[:], None, root=constants.ROOT_RANK,
             )
             result = None
         return result
@@ -535,10 +529,7 @@ class CubedSphereCommunicator(Communicator):
         return self._Isend_Irecv_halos(messages, tag)
 
     def _lazy_get_messages(
-        self,
-        messages: List[MessageBundle],
-        boundary: Boundary,
-        quantity: Quantity,
+        self, messages: List[MessageBundle], boundary: Boundary, quantity: Quantity,
     ) -> MessageBundle:
         to_rank_messages = [x for x in messages if x.to_rank == boundary.to_rank]
         assert len(to_rank_messages) <= 1
@@ -606,18 +597,12 @@ class CubedSphereCommunicator(Communicator):
         )
 
     def vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
         self.vector_halo_update_aggregate([x_quantity], [y_quantity], n_points)
 
     def vector_halo_update_aggregate(
-        self,
-        x_quantities: List[Quantity],
-        y_quantities: List[Quantity],
-        n_points: int,
+        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
     ):
         """Perform a halo update of a horizontal vector quantity.
 
@@ -686,20 +671,14 @@ class CubedSphereCommunicator(Communicator):
         req.wait()
 
     def start_vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
         return self.start_vector_halo_update_aggregate(
             [x_quantity], [y_quantity], n_points
         )
 
     def start_vector_halo_update_aggregate(
-        self,
-        x_quantities: List[Quantity],
-        y_quantities: List[Quantity],
-        n_points: int,
+        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
     ) -> HaloUpdateRequest:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -866,10 +845,7 @@ class CubedSphereCommunicator(Communicator):
         return (recv_request, buffer, out_array)
 
     def finish_vector_halo_update(
-        self,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        n_points: int,
+        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
     ):
         """Deprecated, do not use."""
         raise NotImplementedError(
