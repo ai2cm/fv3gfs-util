@@ -16,7 +16,6 @@ except ImportError:
 
 _CODE_PATH_DEVICE_WIDE_SYNC = False
 _CODE_PATH_CUPY = False
-_OPT_CPU_CODE_PATH = False
 
 # Keyed cached
 # getting a string from Tuple(slices, rotation, shape, strides, itemsize)
@@ -233,7 +232,13 @@ class MessageBundle:
     def async_unpack(self):
         """Unpack the buffer into destination arrays.
 
-        Implementation should guarantee transfer is done.
+        Implementation DOESN'T HAVE TO guarantee transfer is done."""
+        raise NotImplementedError()
+
+    def finalize(self):
+        """Finalize operations after unpack.
+
+        Implementation should guarantee all transfers are done.
         Implementation should return recv & send Buffers to the cache for reuse."""
         raise NotImplementedError()
 
@@ -353,6 +358,9 @@ class MessageBundleCPU(MessageBundle):
                 buffer_reshape=quantity_view.shape,
             )
             offset += message_size
+
+    def finalize(self):
+        pass
 
 
 class MessageBundleGPU(MessageBundle):
@@ -496,7 +504,7 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
         if not _CODE_PATH_CUPY:
             for x_info in self._x_infos:
                 self._x_cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
-                    stream=_pop_stream(),  # cp.cuda.Stream(non_blocking=True),
+                    stream=_pop_stream(),
                     send_indices=self._flatten_indices(
                         x_info, x_info.send_slices, True
                     ),
@@ -506,7 +514,7 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
                 )
             for y_info in self._y_infos:
                 self._y_cu_kernel_args[y_info._id] = MessageBundleGPU.CuKernelArgs(
-                    stream=_pop_stream(),  # cp.cuda.Stream(non_blocking=True),
+                    stream=_pop_stream(),
                     send_indices=self._flatten_indices(
                         y_info, y_info.send_slices, True
                     ),
@@ -568,8 +576,6 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
 
     def _opt_pack_scalar(self):
         offset = 0
-        if _OPT_CPU_CODE_PATH:
-            np_buffer = cp.asnumpy(self._send_buffer.array.copy())
         for x_info in self._x_infos:
             kernel_args = self._x_cu_kernel_args[x_info._id]
 
@@ -579,36 +585,26 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
             # Message size
             message_size = _slices_length(x_info.send_slices)
 
-            if _OPT_CPU_CODE_PATH:
-                np_flatten_data = cp.asnumpy(x_info.quantity.data).flatten(order="C")
-                np_idx = cp.asnumpy(kernel_args.send_indices)
+            if x_info.quantity.metadata.dtype != np.float64:
+                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-                for i in range(0, message_size):
-                    np_buffer[offset + i] = np_flatten_data[np_idx[i]]
-            else:
-                if x_info.quantity.metadata.dtype != np.float64:
-                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
-
-                # Launch kernel
-                blocks = 128
-                grid_x = (message_size // blocks) + 1
-                self._pack_scalar_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        x_info.quantity.data[:],  # source_array
-                        kernel_args.send_indices,  # indices
-                        message_size,  # nIndex
-                        offset,
-                        self._send_buffer.array,
-                    ),
-                )
+            # Launch kernel
+            blocks = 128
+            grid_x = (message_size // blocks) + 1
+            self._pack_scalar_f64_kernel(
+                (blocks,),
+                (grid_x,),
+                (
+                    x_info.quantity.data[:],  # source_array
+                    kernel_args.send_indices,  # indices
+                    message_size,  # nIndex
+                    offset,
+                    self._send_buffer.array,
+                ),
+            )
 
             # Next message offset into send buffer
             offset += message_size
-
-        if _OPT_CPU_CODE_PATH:
-            self._send_buffer.array = np_buffer
 
     def _pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -652,7 +648,9 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
         else:
             raise RuntimeError(f"Unimplemented {self._type} message unpack")
 
-        self._recv_buffer.finalize_memory_transfer()
+    def finalize(self):
+        # Synchronize all work
+        self.synchronize()
 
         # Push the buffers back in the cache
         Buffer.push_to_cache(self._send_buffer)
@@ -680,8 +678,6 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
 
     def _opt_unpack_scalar(self):
         offset = 0
-        if _OPT_CPU_CODE_PATH:
-            np_buffer = cp.asnumpy(self._recv_buffer.array.copy())
         for x_info in self._x_infos:
             kernel_args = self._x_cu_kernel_args[x_info._id]
 
@@ -691,30 +687,20 @@ void unpack_scalar_f64(const double* i_sourceBuffer,
             # Message size
             message_size = _slices_length(x_info.recv_slices)
 
-            if _OPT_CPU_CODE_PATH:
-                np_flatten_data = cp.asnumpy(x_info.quantity.data).flatten(order="C")
-                np_idx = cp.asnumpy(kernel_args.recv_indices)
-
-                for i in range(0, message_size):
-                    np_flatten_data[np_idx[i]] = np_buffer[offset + i]
-
-                reshaped_data = np_flatten_data.reshape(x_info.quantity.data.shape)
-                x_info.quantity.data[:] = cp.asarray(reshaped_data)
-            else:
-                # Launch kernel
-                blocks = 128
-                grid_x = (message_size // blocks) + 1
-                self._unpack_scalar_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        self._recv_buffer.array,  # source_buffer
-                        kernel_args.recv_indices,  # indices
-                        message_size,  # nIndex
-                        offset,
-                        x_info.quantity.data[:],  # destination_array
-                    ),
-                )
+            # Launch kernel
+            blocks = 128
+            grid_x = (message_size // blocks) + 1
+            self._unpack_scalar_f64_kernel(
+                (blocks,),
+                (grid_x,),
+                (
+                    self._recv_buffer.array,  # source_buffer
+                    kernel_args.recv_indices,  # indices
+                    message_size,  # nIndex
+                    offset,
+                    x_info.quantity.data[:],  # destination_array
+                ),
+            )
 
             # Next message offset into recv buffer
             offset += message_size

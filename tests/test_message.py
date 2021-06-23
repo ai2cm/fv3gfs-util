@@ -296,7 +296,7 @@ def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
     # Simulate data transfer
     message.get_recv_buffer().assign_from(message.get_send_buffer().array)
     message.async_unpack()
-    message.synchronize()
+    message.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -352,7 +352,7 @@ def test_message_vector_pack_unpack(quantity):
     # Simulate data transfer
     message.get_recv_buffer().assign_from(message.get_send_buffer().array)
     message.async_unpack()
-    message.synchronize()
+    message.finalize()
     # original_quantity.data[boundary_north] *= -1
     assert (original_quantity.data == quantity.data).all()
     assert message._send_buffer is None

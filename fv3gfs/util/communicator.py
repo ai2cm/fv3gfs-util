@@ -119,7 +119,7 @@ class HaloUpdateRequestMessage:
             for message in self._messages:
                 message.async_unpack()
             for message in self._messages:
-                message.synchronize()
+                message.finalize()
 
 
 class Communicator:
@@ -580,8 +580,9 @@ class CubedSphereCommunicator(Communicator):
             with self.timer.clock("pack"):
                 message.async_pack()
         for message in messages:
-            with self.timer.clock("Isend"):
+            with self.timer.clock("pack"):
                 message.synchronize()
+            with self.timer.clock("Isend"):
                 send_requests.append(
                     self.comm.Isend(
                         message.get_send_buffer().array, dest=message.to_rank, tag=tag
