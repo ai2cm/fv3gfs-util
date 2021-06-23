@@ -8,27 +8,40 @@ from fv3gfs.util import (
     X_INTERFACE_DIM,
     Z_INTERFACE_DIM,
     _boundary_utils,
-    SOUTHWEST,
     NORTH,
+    NORTHWEST,
+    WEST,
+    SOUTHWEST,
+    SOUTH,
+    SOUTHEAST,
+    EAST,
+    NORTHEAST,
 )
 from fv3gfs.util.message import MessageBundle
 from fv3gfs.util.buffer import Buffer
+from fv3gfs.util.rotate import rotate_scalar_data
 import copy
+from typing import Tuple
+
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 
 
 @pytest.fixture
 def nz():
-    return 3
+    return 5
 
 
 @pytest.fixture
 def ny():
-    return 5
+    return 7
 
 
 @pytest.fixture
 def nx():
-    return 5
+    return 7
 
 
 @pytest.fixture
@@ -51,14 +64,19 @@ def dtype(numpy):
     return numpy.float64
 
 
+@pytest.fixture(params=[1, 3])
+def n_halos(request):
+    return request.param
+
+
 @pytest.fixture
-def origin(n_points, dims, n_buffer):
+def origin(n_halos, dims, n_buffer):
     return_list = []
     origin_dict = {
-        X_DIM: n_points + n_buffer,
-        X_INTERFACE_DIM: n_points + n_buffer,
-        Y_DIM: n_points + n_buffer,
-        Y_INTERFACE_DIM: n_points + n_buffer,
+        X_DIM: n_halos + n_buffer,
+        X_INTERFACE_DIM: n_halos + n_buffer,
+        Y_DIM: n_halos + n_buffer,
+        Y_INTERFACE_DIM: n_halos + n_buffer,
         Z_DIM: n_buffer,
         Z_INTERFACE_DIM: n_buffer,
     }
@@ -89,13 +107,13 @@ def dims(request, fast):
 
 
 @pytest.fixture
-def shape(nz, ny, nx, dims, n_points, n_buffer):
+def shape(nz, ny, nx, dims, n_halos, n_buffer):
     return_list = []
     length_dict = {
-        X_DIM: 2 * n_points + nx + n_buffer,
-        X_INTERFACE_DIM: 2 * n_points + nx + 1 + n_buffer,
-        Y_DIM: 2 * n_points + ny + n_buffer,
-        Y_INTERFACE_DIM: 2 * n_points + ny + 1 + n_buffer,
+        X_DIM: 2 * n_halos + nx + n_buffer,
+        X_INTERFACE_DIM: 2 * n_halos + nx + 1 + n_buffer,
+        Y_DIM: 2 * n_halos + ny + n_buffer,
+        Y_INTERFACE_DIM: 2 * n_halos + ny + 1 + n_buffer,
         Z_DIM: nz + n_buffer,
         Z_INTERFACE_DIM: nz + 1 + n_buffer,
     }
@@ -120,17 +138,55 @@ def extent(n_points, dims, nz, ny, nx):
     return return_list
 
 
+def _shape_length(shape: Tuple[int]) -> int:
+    """Compute linear size from slices"""
+    length = 1
+    for s in shape:
+        length *= s
+    return length
+
+
 @pytest.fixture
-def quantity(dims, units, origin, extent, shape, numpy, dtype):
+def quantity(dims, units, origin, extent, shape, numpy, dtype, backend):
     """A list of quantities whose values are 42.42 in the computational domain and 1
     outside of it."""
-    data = numpy.ones(shape, dtype=dtype)
-    quantity = Quantity(data, dims=dims, units=units, origin=origin, extent=extent)
-    quantity.view[:] = 42.42
+    sz = _shape_length(shape)
+    print(f"{shape} {sz}")
+    data = numpy.arange(0, sz, dtype=dtype).reshape(shape)
+    if backend == "gt4py_cupy":
+        quantity = Quantity(
+            cp.asnumpy(data),
+            dims=dims,
+            units=units,
+            origin=origin,
+            extent=extent,
+            gt4py_backend="gtcuda",
+        )
+        layout_map = quantity.storage.layout_map
+        print(layout_map)
+    elif backend == "gt4py_numpy":
+        quantity = Quantity(
+            data,
+            dims=dims,
+            units=units,
+            origin=origin,
+            extent=extent,
+            gt4py_backend="gtx86",
+        )
+        layout_map = quantity.storage.layout_map
+        print(layout_map)
+    else:
+        quantity = Quantity(data, dims=dims, units=units, origin=origin, extent=extent)
+    # quantity.view[:] = 42.42
     return quantity
 
 
-def test_message_allocate(quantity):
+@pytest.fixture(params=[-0, -1, -2, -3])
+def rotation(request):
+    return request.param
+
+
+def test_message_allocate(quantity, n_halos):
     message = MessageBundle.get_from_quantity_module(0, quantity.np)
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
@@ -138,7 +194,7 @@ def test_message_allocate(quantity):
         quantity.extent,
         quantity.data.shape,
         NORTH,
-        1,
+        n_halos,
         interior=False,
     )
     boundary_southwest = _boundary_utils.get_boundary_slice(
@@ -147,7 +203,7 @@ def test_message_allocate(quantity):
         quantity.extent,
         quantity.data.shape,
         SOUTHWEST,
-        1,
+        n_halos,
         interior=False,
     )
 
@@ -169,31 +225,71 @@ def test_message_allocate(quantity):
     Buffer.push_to_cache(message._recv_buffer)
 
 
-def test_message_scalar_pack_unpack(quantity):
-    original_quantity = copy.deepcopy(quantity)
+def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
+    original_quantity: Quantity = copy.deepcopy(quantity)
     message = MessageBundle.get_from_quantity_module(0, quantity.np)
 
-    boundary_north = _boundary_utils.get_boundary_slice(
-        quantity.dims,
-        quantity.origin,
-        quantity.extent,
-        quantity.data.shape,
+    boundary_send_interior = True
+    boundary_recv_interior = False
+
+    send_boundaries = {}
+    recv_boundaries = {}
+    for direction in [
         NORTH,
-        1,
-        interior=False,
-    )
-    boundary_southwest = _boundary_utils.get_boundary_slice(
-        quantity.dims,
-        quantity.origin,
-        quantity.extent,
-        quantity.data.shape,
+        NORTHWEST,
+        WEST,
         SOUTHWEST,
-        1,
-        interior=False,
+        SOUTH,
+        SOUTHEAST,
+        EAST,
+        NORTHEAST,
+    ]:
+        send_boundaries[direction] = _boundary_utils.get_boundary_slice(
+            quantity.dims,
+            quantity.origin,
+            quantity.extent,
+            quantity.data.shape,
+            direction,
+            n_halos,
+            interior=boundary_send_interior,
+        )
+        recv_boundaries[direction] = _boundary_utils.get_boundary_slice(
+            quantity.dims,
+            quantity.origin,
+            quantity.extent,
+            quantity.data.shape,
+            direction,
+            n_halos,
+            interior=boundary_recv_interior,
+        )
+
+    N_edge_boundaries = {
+        0: (send_boundaries[NORTH], recv_boundaries[SOUTH]),
+        -1: (send_boundaries[NORTH], recv_boundaries[WEST]),
+        -2: (send_boundaries[NORTH], recv_boundaries[NORTH]),
+        -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
+    }
+
+    NE_corner_boundaries = {
+        0: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHEAST]),
+        -1: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHWEST]),
+        -2: (send_boundaries[NORTHEAST], recv_boundaries[NORTHWEST]),
+        -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
+    }
+
+    message.queue_scalar_message(
+        quantity,
+        N_edge_boundaries[rotation][0],
+        rotation,
+        N_edge_boundaries[rotation][1],
+    )
+    message.queue_scalar_message(
+        quantity,
+        NE_corner_boundaries[rotation][0],
+        rotation,
+        NE_corner_boundaries[rotation][1],
     )
 
-    message.queue_scalar_message(quantity, boundary_north, 0, boundary_north)
-    message.queue_scalar_message(quantity, boundary_southwest, 0, boundary_southwest)
     message.allocate()
     message.async_pack()
     message.synchronize()
@@ -201,6 +297,25 @@ def test_message_scalar_pack_unpack(quantity):
     message.get_recv_buffer().assign_from(message.get_send_buffer().array)
     message.async_unpack()
     message.synchronize()
+
+    # From the copy of the original quantity we rotate data
+    # according to the rotation & slice and insert them bak
+    # this reproduce the multi-buffer strategy
+    rotated = rotate_scalar_data(
+        original_quantity.data[N_edge_boundaries[rotation][0]],
+        original_quantity.dims,
+        original_quantity.metadata.np,
+        -rotation,
+    )
+    original_quantity.data[N_edge_boundaries[rotation][1]] = rotated
+    rotated = rotate_scalar_data(
+        original_quantity.data[NE_corner_boundaries[rotation][0]],
+        original_quantity.dims,
+        original_quantity.metadata.np,
+        -rotation,
+    )
+    original_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
+
     assert (original_quantity.data == quantity.data).all()
     assert message._send_buffer is None
     assert message._recv_buffer is None
@@ -227,7 +342,7 @@ def test_message_vector_pack_unpack(quantity):
         boundary_north,
         y_quantity,
         boundary_north,
-        1,
+        0,
         boundary_north,
         boundary_north,
     )
@@ -238,7 +353,7 @@ def test_message_vector_pack_unpack(quantity):
     message.get_recv_buffer().assign_from(message.get_send_buffer().array)
     message.async_unpack()
     message.synchronize()
-    original_quantity.data[boundary_north] = -1
+    # original_quantity.data[boundary_north] *= -1
     assert (original_quantity.data == quantity.data).all()
     assert message._send_buffer is None
     assert message._recv_buffer is None

@@ -2,16 +2,39 @@ from dataclasses import dataclass
 from .buffer import Buffer
 from .quantity import Quantity
 from .types import NumpyModule
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
-from .utils import flatten
+from .utils import device_synchronize, flatten
 import numpy as np
+from uuid import UUID, uuid1
 
 try:
     import cupy as cp
 except ImportError:
     cp = None
+
+_CODE_PATH_DEVICE_WIDE_SYNC = False
+_CODE_PATH_CUPY = False
+_OPT_CPU_CODE_PATH = False
+
+# Keyed cached
+# getting a string from Tuple(slices, rotation, shape, strides, itemsize)
+# IndicesKey = str(Tuple[Any, int, Tuple[int], Tuple[int], int])
+INDICES_GPU_CACHE: Dict[str, cp.ndarray] = {}
+
+# Simple pool of streams
+STREAM_POOL: List[cp.cuda.Stream] = []
+
+
+def _pop_stream() -> cp.cuda.Stream:
+    if len(STREAM_POOL) == 0:
+        return cp.cuda.Stream(non_blocking=True)
+    return STREAM_POOL.pop()
+
+
+def _push_stream(stream: cp.cuda.Stream):
+    STREAM_POOL.append(stream)
 
 
 def _slices_length(slices: Tuple[slice]) -> int:
@@ -27,6 +50,7 @@ def _slices_length(slices: Tuple[slice]) -> int:
 class MessageMetadata:
     """Description of a single message."""
 
+    _id: UUID
     quantity: Quantity
     send_slices: Tuple[slice]
     send_clockwise_rotation: int
@@ -43,7 +67,7 @@ class MessageBundleType(Enum):
 
 class MessageBundle:
     """Pack/unpack multiple nD array into/from a single buffer.
-    
+
     The class is responsible for packing & unpacking, not communication.
     Order of operations:
     - get MessageBundle via get_from_quantity_module
@@ -120,6 +144,7 @@ class MessageBundle:
         self._type = MessageBundleType.SCALAR
         self._x_infos.append(
             MessageMetadata(
+                _id=uuid1(),
                 quantity=quantity,
                 send_slices=send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
@@ -149,6 +174,7 @@ class MessageBundle:
         self._type = MessageBundleType.VECTOR
         self._x_infos.append(
             MessageMetadata(
+                _id=uuid1(),
                 quantity=x_quantity,
                 send_slices=x_send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
@@ -157,6 +183,7 @@ class MessageBundle:
         )
         self._y_infos.append(
             MessageMetadata(
+                _id=uuid1(),
                 quantity=y_quantity,
                 send_slices=y_send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
@@ -192,6 +219,9 @@ class MessageBundle:
         self._recv_buffer = Buffer.pop_from_cache(
             self._np_module.empty, (buffer_size), dtype
         )
+
+    def ready(self):
+        return self._send_buffer is not None and self._recv_buffer is not None
 
     def async_pack(self):
         """Pack all queued messages into a single send Buffer.
@@ -326,24 +356,197 @@ class MessageBundleCPU(MessageBundle):
 
 
 class MessageBundleGPU(MessageBundle):
+    @dataclass
+    class CuKernelArgs:
+        stream: cp.cuda.Stream
+        send_indices: cp.ndarray
+        recv_indices: cp.ndarray
+
+    _x_cu_kernel_args: Dict[UUID, CuKernelArgs]
+    _y_cu_kernel_args: Dict[UUID, CuKernelArgs]
+
+    _pack_scalar_f64_kernel = cp.RawKernel(
+        r"""
+extern "C" __global__
+void pack_scalar_f64(const double* i_sourceArray,
+                     const int* i_indexes,
+                     const int i_nIndex,
+                     const int i_offset,
+                     double* o_destinationBuffer)
+{
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid>=i_nIndex)
+        return;
+    
+    o_destinationBuffer[i_offset+tid] = i_sourceArray[i_indexes[tid]];
+}
+
+""",
+        "pack_scalar_f64",
+    )
+
+    _unpack_scalar_f64_kernel = cp.RawKernel(
+        r"""
+extern "C" __global__
+void unpack_scalar_f64(const double* i_sourceBuffer,
+                       const int* i_indexes,
+                       const int i_nIndex,
+                       const int i_offset,
+                       double* o_destinationArray)
+{
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid>=i_nIndex)
+        return;
+    
+    o_destinationArray[i_indexes[tid]] = i_sourceBuffer[i_offset+tid];
+}
+
+""",
+        "unpack_scalar_f64",
+    )
+
     def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
         super().__init__(to_rank, np_module)
-        self._stream = cp.cuda.Stream(non_blocking=True)
+        self._x_cu_kernel_args = {}
+        self._y_cu_kernel_args = {}
+
+    def _build_flatten_indices(
+        self,
+        key,
+        shape_of_sliced_data: Tuple[int],
+        dims,
+        strides: Tuple[int],
+        itemsize: int,
+        slices: Tuple[slice],
+        rotate: bool,
+        rotation: int,
+    ):
+        # if MPI.COMM_WORLD.Get_rank() == 0:
+        #     print(f"Forging {key} - # {len(INDICES_GPU_CACHE)}")
+
+        # Have to go down to numpy to leverage indices calculation
+        arr_indices = np.zeros(shape_of_sliced_data, dtype=np.int32, order="C")
+
+        # Get offset from first index
+        offset_dims = []
+        for s in slices:
+            offset_dims.append(s.start)
+        offset_to_slice = sum(np.array(offset_dims) * strides) // itemsize
+
+        # Flatten the index into an indices array
+        with np.nditer(
+            arr_indices, flags=["multi_index"], op_flags=["writeonly"], order="K",
+        ) as it:
+            for array_value in it:
+                offset = sum(np.array(it.multi_index) * strides) // itemsize
+                array_value[...] = offset_to_slice + offset
+        # with np.nditer(
+        #     arr_indices,
+        #     flags=["multi_index"],
+        #     # op_flags=["writeonly"],
+        #     order="K",
+        # ) as it:
+        #     for _ in it:
+        #         offset = sum(np.array(it.multi_index) * strides) // itemsize
+        #         arr_indices[it.multi_index] = offset_to_slice + offset
+
+        if rotate:
+            # sending data across the boundary will rotate the data
+            # n_clockwise_rotations times, due to the difference in axis orientation.
+            # Thus we rotate that number of times counterclockwise before sending,
+            # to get the right final orientation. We apply those rotations to the
+            # indices here to prepare for a straightforward copy in cu kernel
+            arr_indices = rotate_scalar_data(arr_indices, dims, cp, -rotation,)
+        arr_indices_gpu = cp.asarray(arr_indices.flatten(order="C"))
+        INDICES_GPU_CACHE[key] = arr_indices_gpu
+
+    def _flatten_indices(
+        self, message_info: MessageMetadata, slices: Tuple[slice], rotate: bool
+    ) -> cp.ndarray:
+        """Extract a flat array of indices for the send message.
+
+        Also take care of rotating the indices to account for axis orientation
+        """
+        strides = message_info.quantity.data.strides
+        itemsize = message_info.quantity.data.itemsize
+        shape = message_info.quantity.data.shape
+        key = str(
+            (slices, message_info.send_clockwise_rotation, shape, strides, itemsize)
+        )
+
+        if key not in INDICES_GPU_CACHE.keys():
+            self._build_flatten_indices(
+                key,
+                message_info.quantity.data[slices].shape,
+                message_info.quantity.dims,
+                strides,
+                itemsize,
+                slices,
+                rotate,
+                message_info.send_clockwise_rotation,
+            )
+
+        # We don't return a copy since the indices are read-only in the algorithm
+        return INDICES_GPU_CACHE[key]
+
+    def allocate(self):
+        # Super to get buffer allocation
+        super().allocate()
+        # Allocate the streams & build the indices arrays
+        if not _CODE_PATH_CUPY:
+            for x_info in self._x_infos:
+                self._x_cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
+                    stream=_pop_stream(),  # cp.cuda.Stream(non_blocking=True),
+                    send_indices=self._flatten_indices(
+                        x_info, x_info.send_slices, True
+                    ),
+                    recv_indices=self._flatten_indices(
+                        x_info, x_info.recv_slices, False
+                    ),
+                )
+            for y_info in self._y_infos:
+                self._y_cu_kernel_args[y_info._id] = MessageBundleGPU.CuKernelArgs(
+                    stream=_pop_stream(),  # cp.cuda.Stream(non_blocking=True),
+                    send_indices=self._flatten_indices(
+                        y_info, y_info.send_slices, True
+                    ),
+                    recv_indices=self._flatten_indices(
+                        y_info, y_info.recv_slices, False
+                    ),
+                )
 
     def synchronize(self):
-        self._stream.synchronize()
+        if _CODE_PATH_DEVICE_WIDE_SYNC:
+            self._safe_synchronize()
+        else:
+            self._streamed_synchronize()
+
+    def _streamed_synchronize(self):
+        for x_kernel in self._x_cu_kernel_args.values():
+            x_kernel.stream.synchronize()
+        for y_kernel in self._y_cu_kernel_args.values():
+            y_kernel.stream.synchronize()
+
+    def _safe_synchronize(self):
+        device_synchronize()
+
+    def _use_stream(self, stream):
+        if not _CODE_PATH_DEVICE_WIDE_SYNC:
+            stream.use()
 
     def async_pack(self):
         # Unpack per type
-        self._stream.use()
         if self._type == MessageBundleType.SCALAR:
-            self._pack_scalar()
+            if _CODE_PATH_CUPY:
+                self._cupy_pack_scalar()
+            else:
+                self._opt_pack_scalar()
         elif self._type == MessageBundleType.VECTOR:
             self._pack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} message pack")
 
-    def _pack_scalar(self):
+    def _cupy_pack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
             message_size = _slices_length(x_info.send_slices)
@@ -363,10 +566,56 @@ class MessageBundleGPU(MessageBundle):
             )
             offset += message_size
 
+    def _opt_pack_scalar(self):
+        offset = 0
+        if _OPT_CPU_CODE_PATH:
+            np_buffer = cp.asnumpy(self._send_buffer.array.copy())
+        for x_info in self._x_infos:
+            kernel_args = self._x_cu_kernel_args[x_info._id]
+
+            # Use private stream
+            self._use_stream(kernel_args.stream)
+
+            # Message size
+            message_size = _slices_length(x_info.send_slices)
+
+            if _OPT_CPU_CODE_PATH:
+                np_flatten_data = cp.asnumpy(x_info.quantity.data).flatten(order="C")
+                np_idx = cp.asnumpy(kernel_args.send_indices)
+
+                for i in range(0, message_size):
+                    np_buffer[offset + i] = np_flatten_data[np_idx[i]]
+            else:
+                if x_info.quantity.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+
+                # Launch kernel
+                blocks = 128
+                grid_x = (message_size // blocks) + 1
+                self._pack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        x_info.quantity.data[:],  # source_array
+                        kernel_args.send_indices,  # indices
+                        message_size,  # nIndex
+                        offset,
+                        self._send_buffer.array,
+                    ),
+                )
+
+            # Next message offset into send buffer
+            offset += message_size
+
+        if _OPT_CPU_CODE_PATH:
+            self._send_buffer.array = np_buffer
+
     def _pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
         offset = 0
         for x_info, y_info in zip(self._x_infos, self._y_infos):
+            # kernel_args = self._x_cu_kernel_args[x_info._id]
+            # self._use_stream(kernel_args.stream)
             # sending data across the boundary will rotate the data
             # n_clockwise_rotations times, due to the difference in axis orientation
             # Thus we rotate that number of times counterclockwise before sending,
@@ -393,9 +642,11 @@ class MessageBundleGPU(MessageBundle):
 
     def async_unpack(self):
         # Unpack per type
-        self._stream.use()
         if self._type == MessageBundleType.SCALAR:
-            self._unpack_scalar()
+            if _CODE_PATH_CUPY:
+                self._cupy_unpack_scalar()
+            else:
+                self._opt_unpack_scalar()
         elif self._type == MessageBundleType.VECTOR:
             self._unpack_vector()
         else:
@@ -403,13 +654,19 @@ class MessageBundleGPU(MessageBundle):
 
         self._recv_buffer.finalize_memory_transfer()
 
-        # Pop the buffers back in the cache
+        # Push the buffers back in the cache
         Buffer.push_to_cache(self._send_buffer)
         self._send_buffer = None
         Buffer.push_to_cache(self._recv_buffer)
         self._recv_buffer = None
 
-    def _unpack_scalar(self):
+        # # Push the streams back
+        for cu_info in self._x_cu_kernel_args.values():
+            _push_stream(cu_info.stream)
+        for cu_info in self._y_cu_kernel_args.values():
+            _push_stream(cu_info.stream)
+
+    def _cupy_unpack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
             quantity_view = x_info.quantity.data[x_info.recv_slices]
@@ -421,9 +678,52 @@ class MessageBundleGPU(MessageBundle):
             )
             offset += message_size
 
+    def _opt_unpack_scalar(self):
+        offset = 0
+        if _OPT_CPU_CODE_PATH:
+            np_buffer = cp.asnumpy(self._recv_buffer.array.copy())
+        for x_info in self._x_infos:
+            kernel_args = self._x_cu_kernel_args[x_info._id]
+
+            # Use private stream
+            self._use_stream(kernel_args.stream)
+
+            # Message size
+            message_size = _slices_length(x_info.recv_slices)
+
+            if _OPT_CPU_CODE_PATH:
+                np_flatten_data = cp.asnumpy(x_info.quantity.data).flatten(order="C")
+                np_idx = cp.asnumpy(kernel_args.recv_indices)
+
+                for i in range(0, message_size):
+                    np_flatten_data[np_idx[i]] = np_buffer[offset + i]
+
+                reshaped_data = np_flatten_data.reshape(x_info.quantity.data.shape)
+                x_info.quantity.data[:] = cp.asarray(reshaped_data)
+            else:
+                # Launch kernel
+                blocks = 128
+                grid_x = (message_size // blocks) + 1
+                self._unpack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        self._recv_buffer.array,  # source_buffer
+                        kernel_args.recv_indices,  # indices
+                        message_size,  # nIndex
+                        offset,
+                        x_info.quantity.data[:],  # destination_array
+                    ),
+                )
+
+            # Next message offset into recv buffer
+            offset += message_size
+
     def _unpack_vector(self):
         offset = 0
         for x_info, y_info in zip(self._x_infos, self._y_infos):
+            # kernel_args = self._x_cu_kernel_args[x_info._id]
+            # self._use_stream(kernel_args.stream)
             quantity_view = x_info.quantity.data[x_info.recv_slices]
             message_size = _slices_length(x_info.recv_slices)
             self._recv_buffer.assign_to(
