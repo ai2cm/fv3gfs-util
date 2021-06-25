@@ -8,6 +8,12 @@ from .rotate import rotate_scalar_data, rotate_vector_data
 from .utils import device_synchronize, flatten
 import numpy as np
 from uuid import UUID, uuid1
+from .cuda_kernels import (
+    pack_scalar_f64_kernel,
+    pack_vector_f64_kernel,
+    unpack_scalar_f64_kernel,
+    unpack_vector_f64_kernel,
+)
 
 try:
     import cupy as cp
@@ -21,19 +27,19 @@ _CODE_PATH_CUPY = False
 # a slice is not hashable
 # getting a string from Tuple(slices, rotation, shape, strides, itemsize)
 # IndicesKey = str(Tuple[Any, int, Tuple[int], Tuple[int], int]) #noqa
-INDICES_GPU_CACHE: Dict[str, cp.ndarray] = {}
+INDICES_GPU_CACHE: Dict[str, "cp.ndarray"] = {}
 
 # Simple pool of streams
-STREAM_POOL: List[cp.cuda.Stream] = []
+STREAM_POOL: List["cp.cuda.Stream"] = []
 
 
-def _pop_stream() -> cp.cuda.Stream:
+def _pop_stream() -> "cp.cuda.Stream":
     if len(STREAM_POOL) == 0:
         return cp.cuda.Stream(non_blocking=True)
     return STREAM_POOL.pop()
 
 
-def _push_stream(stream: cp.cuda.Stream):
+def _push_stream(stream: "cp.cuda.Stream"):
     STREAM_POOL.append(stream)
 
 
@@ -367,132 +373,11 @@ class MessageBundleCPU(MessageBundle):
 class MessageBundleGPU(MessageBundle):
     @dataclass
     class CuKernelArgs:
-        stream: cp.cuda.Stream
-        x_send_indices: cp.ndarray
-        x_recv_indices: cp.ndarray
-        y_send_indices: Optional[cp.ndarray]
-        y_recv_indices: Optional[cp.ndarray]
-
-    _pack_scalar_f64_kernel = cp.RawKernel(
-        r"""
-extern "C" __global__
-void pack_scalar_f64(const double* i_sourceArray,
-                     const int* i_indexes,
-                     const int i_nIndex,
-                     const int i_offset,
-                     double* o_destinationBuffer)
-{
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    if (tid>=i_nIndex)
-        return;
-    
-    o_destinationBuffer[i_offset+tid] = i_sourceArray[i_indexes[tid]];
-}
-
-""",
-        "pack_scalar_f64",
-    )
-
-    _unpack_scalar_f64_kernel = cp.RawKernel(
-        r"""
-extern "C" __global__
-void unpack_scalar_f64(const double* i_sourceBuffer,
-                       const int* i_indexes,
-                       const int i_nIndex,
-                       const int i_offset,
-                       double* o_destinationArray)
-{
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    if (tid>=i_nIndex)
-        return;
-    
-    o_destinationArray[i_indexes[tid]] = i_sourceBuffer[i_offset+tid];
-}
-
-""",
-        "unpack_scalar_f64",
-    )
-
-    # Expect rotate >= 0 in [0:4[
-    _pack_vector_f64_kernel = cp.RawKernel(
-        r"""
-extern "C" __global__
-void pack_vector_f64(const double* i_sourceArrayX,
-                     const double* i_sourceArrayY,
-                     const int* i_indexesX,
-                     const int* i_indexesY,
-                     const int i_nIndexX,
-                     const int i_nIndexY,
-                     const int i_offset,
-                     const int i_rotate,
-                     double* o_destinationBuffer)
-{
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    if (tid>=i_nIndexX+i_nIndexY)
-        return;
-
-    if (i_rotate == 0)
-    {
-        //pass
-        if (tid<i_nIndexX)
-            o_destinationBuffer[i_offset+tid] = i_sourceArrayX[i_indexesX[tid]];
-        else
-            o_destinationBuffer[i_offset+tid] = i_sourceArrayY[i_indexesY[tid-i_nIndexX]];
-    }
-    else if (i_rotate == 1)
-    {
-        //data[0], data[1] = data[1], -data[0]
-        if (tid<i_nIndexY)
-            o_destinationBuffer[i_offset+tid] = i_sourceArrayY[i_indexesY[tid]];
-        else
-            o_destinationBuffer[i_offset+tid] = -1.0 * i_sourceArrayX[i_indexesX[tid-i_nIndexY]];
-    }
-    else if (i_rotate == 2)
-    {
-        //data[0], data[1] = -data[0], -data[1]
-        if (tid<i_nIndexX)
-            o_destinationBuffer[i_offset+tid] = -1.0 * i_sourceArrayX[i_indexesX[tid]];
-        else
-            o_destinationBuffer[i_offset+tid] = -1.0 * i_sourceArrayY[i_indexesY[tid-i_nIndexX]];
-    }
-    else if (i_rotate == 3)
-    {
-        //data[0], data[1] = -data[1], data[0]
-        if (tid<i_nIndexY)
-            o_destinationBuffer[i_offset+tid] = -1.0 * i_sourceArrayY[i_indexesY[tid]];
-        else
-            o_destinationBuffer[i_offset+tid] = i_sourceArrayX[i_indexesX[tid-i_nIndexY]];
-    }
-    
-}
-
-""",
-        "pack_vector_f64",
-    )
-
-    _unpack_vector_f64_kernel = cp.RawKernel(
-        r"""
-extern "C" __global__
-void unpack_vector_f64(const double* i_sourceBuffer,
-                       const int* i_indexesX,
-                       const int* i_indexesY,
-                       const int i_nIndexX,
-                       const int i_nIndexY,
-                       const int i_offset,
-                       double* o_destinationArrayX,
-                       double* o_destinationArrayY)
-{
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    
-    if (tid<i_nIndexX)
-        o_destinationArrayX[i_indexesX[tid]] = i_sourceBuffer[i_offset+tid];
-    else if (tid<i_nIndexX+i_nIndexY)
-        o_destinationArrayY[i_indexesY[tid-i_nIndexX]] = i_sourceBuffer[i_offset+tid];
-}
-
-""",
-        "unpack_vector_f64",
-    )
+        stream: "cp.cuda.Stream"
+        x_send_indices: "cp.ndarray"
+        x_recv_indices: "cp.ndarray"
+        y_send_indices: Optional["cp.ndarray"]
+        y_recv_indices: Optional["cp.ndarray"]
 
     def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
         super().__init__(to_rank, np_module)
@@ -538,7 +423,7 @@ void unpack_vector_f64(const double* i_sourceBuffer,
 
     def _flatten_indices(
         self, message_info: MessageMetadata, slices: Tuple[slice], rotate: bool
-    ) -> cp.ndarray:
+    ) -> "cp.ndarray":
         """Extract a flat array of indices for the send message.
 
         Also take care of rotating the indices to account for axis orientation
@@ -670,7 +555,7 @@ void unpack_vector_f64(const double* i_sourceBuffer,
             # Launch kernel
             blocks = 128
             grid_x = (message_size // blocks) + 1
-            self._pack_scalar_f64_kernel(
+            pack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
@@ -733,7 +618,7 @@ void unpack_vector_f64(const double* i_sourceBuffer,
             # Launch kernel
             blocks = 128
             grid_x = (message_size // blocks) + 1
-            self._pack_vector_f64_kernel(
+            pack_vector_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
@@ -807,7 +692,7 @@ void unpack_vector_f64(const double* i_sourceBuffer,
             # Launch kernel
             blocks = 128
             grid_x = (message_size // blocks) + 1
-            self._unpack_scalar_f64_kernel(
+            unpack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
@@ -862,7 +747,7 @@ void unpack_vector_f64(const double* i_sourceBuffer,
             # Launch kernel
             blocks = 128
             grid_x = (message_size // blocks) + 1
-            self._unpack_vector_f64_kernel(
+            unpack_vector_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
