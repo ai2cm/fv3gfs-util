@@ -113,9 +113,9 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
     with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
         shape = (10, 10, 79)
         dims = (fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM)
-        data = cp.empty(shape, dtype=float)
+        data = cp.ones(shape, dtype=float)
         quantity = fv3gfs.util.Quantity(
-            data, dims=dims, units="m", origin=(3, 3, 0), extent=(3, 3, 0),
+            data, dims=dims, units="m", origin=(3, 3, 1), extent=(3, 3, 1),
         )
         req_list = []
         for communicator in gpu_communicators:
