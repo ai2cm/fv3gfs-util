@@ -8,7 +8,7 @@ from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._timing import Timer, NullTimer
 from .types import AsyncRequest, NumpyModule
 from .utils import device_synchronize
-from .message import MessageBundle
+from .packed_buffer import PackedBuffer
 import logging
 import numpy as np
 
@@ -54,7 +54,7 @@ class HaloUpdateRequest:
         """Build a halo request.
         Args:
             send_data: a tuple of the MPI request and the buffer sent
-            recv_data: a tuple of the MPI request, the temporary message buffer and
+            recv_data: a tuple of the MPI request, the temporary buffer and
             the destination buffer
             timer: optional, time the wait & unpack of a halo exchange
         """
@@ -80,28 +80,28 @@ class HaloUpdateRequest:
                 Buffer.push_to_cache(transfer_buffer)
 
 
-class HaloUpdateRequestMessage:
-    """Asynchronous request object for halo updates leveraging messages."""
+class HaloUpdateRequestPackedBuffer:
+    """Asynchronous request object for halo updates leveraging packed buffers."""
 
     def __init__(
         self,
         send_requests: Iterable[AsyncRequest],
         recv_requests: Iterable[AsyncRequest],
-        messages: Iterable[Tuple[int, MessageBundle]],
+        packed_buffers: Iterable[Tuple[int, PackedBuffer]],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
 
         Args:
-            send_data: a tuple of the MPI request and the buffer sent
-            recv_data: a tuple of the MPI request, the temporary message buffer and
-            the destination buffer
+            send_requests: all MPI requests sent
+            recv_requests: all MPI requests declared as recv
+            packed_buffers: data packed into a single buffer
             timer: optional, time the wait & unpack of a halo exchange
 
         """
         self._send_requests = send_requests
         self._recv_requests = recv_requests
-        self._messages = messages
+        self._packed_buffers = packed_buffers
         self._timer: Timer = timer if timer is not None else NullTimer()
 
     def wait(self):
@@ -116,10 +116,10 @@ class HaloUpdateRequestMessage:
             for recv_req in self._recv_requests:
                 recv_req.wait()
         with self._timer.clock("unpack"):
-            for _to_rank, message in self._messages:
-                message.async_unpack()
-            for _to_rank, message in self._messages:
-                message.finalize()
+            for _to_rank, packed_buffer in self._packed_buffers:
+                packed_buffer.async_unpack()
+            for _to_rank, packed_buffer in self._packed_buffers:
+                packed_buffer.finalize()
 
 
 class Communicator:
@@ -491,7 +491,7 @@ class CubedSphereCommunicator(Communicator):
 
     def start_halo_update(
         self, quantity: Union[Quantity, List[Quantity]], n_points: int
-    ) -> HaloUpdateRequestMessage:
+    ) -> HaloUpdateRequestPackedBuffer:
         """Start an asynchronous halo update on a quantity.
 
         Args:
@@ -511,86 +511,81 @@ class CubedSphereCommunicator(Communicator):
         CubedSphereCommunicator._device_synchronize()
         tag = self._get_halo_tag()
 
-        # Prepare messages
-        # - message dict index on rank of receiver
+        # Prepare rank/packed_buffer tuple dict
+        # - get or create a packed buffer indexed on destination rank
         # - queue for packing
-        # - allocate internal message memory
-        messages: List[Tuple[int, MessageBundle]] = []
+        # - allocate internal buffer memory
+        packed_buffers: List[Tuple[int, PackedBuffer]] = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for quantity in quantities:
-                    message = self._lazy_get_messages(messages, boundary, quantity)
-                    self._queue_scalar(message, quantity, boundary, n_points)
-            self._allocate_messages(messages)
+                    packed_buffer = self._lazy_get_packed_buffer(
+                        packed_buffers, boundary, quantity
+                    )
+                    packed_buffer.queue_scalar(
+                        quantity,
+                        boundary.send_slice(quantity, n_points),
+                        boundary.n_clockwise_rotations,
+                        boundary.recv_slice(quantity, n_points),
+                    )
+            self._allocate_packed_buffer(packed_buffers)
 
         # Issue asynchroneous transfer commands
-        # Includes pre-network call message packing
-        return self._Isend_Irecv_halos(messages, tag)
+        # Includes pre-network call buffer packing
+        return self._Isend_Irecv_halos(packed_buffer, tag)
 
-    def _lazy_get_messages(
+    def _lazy_get_packed_buffer(
         self,
-        messages: List[Tuple[int, MessageBundle]],
+        packed_buffer: List[Tuple[int, PackedBuffer]],
         boundary: Boundary,
         quantity: Quantity,
-    ) -> MessageBundle:
-        to_rank_messages = [x for x in messages if x[0] == boundary.to_rank]
-        assert len(to_rank_messages) <= 1
-        if len(to_rank_messages) == 0:
-            messages.append(
+    ) -> PackedBuffer:
+        to_rank_packed_buffer = [x for x in packed_buffer if x[0] == boundary.to_rank]
+        assert len(to_rank_packed_buffer) <= 1
+        if len(to_rank_packed_buffer) == 0:
+            packed_buffer.append(
                 (
                     boundary.to_rank,
-                    MessageBundle.get_from_quantity_module(
+                    PackedBuffer.get_from_quantity_module(
                         self._maybe_force_cpu(quantity.np)
                     ),
                 )
             )
-            to_rank_messages = [x for x in messages if x[0] == boundary.to_rank]
-        return to_rank_messages[0][1]
+            to_rank_packed_buffer = [
+                x for x in packed_buffer if x[0] == boundary.to_rank
+            ]
+        return to_rank_packed_buffer[0][1]
 
-    def _queue_scalar(
-        self,
-        message: MessageBundle,
-        quantity: Quantity,
-        boundary: Boundary,
-        n_points: int,
-    ):
-        message.queue_scalar_message(
-            quantity,
-            boundary.send_slice(quantity, n_points),
-            boundary.n_clockwise_rotations,
-            boundary.recv_slice(quantity, n_points),
-        )
-
-    def _allocate_messages(self, messages: List[Tuple[int, MessageBundle]]):
-        for _to_rank, message in messages:
-            message.allocate()
+    def _allocate_packed_buffer(self, packed_buffer: List[Tuple[int, PackedBuffer]]):
+        for _to_rank, packed_buffer in packed_buffer:
+            packed_buffer.allocate()
 
     def _Isend_Irecv_halos(
-        self, messages: List[Tuple[int, MessageBundle]], tag: int
-    ) -> HaloUpdateRequestMessage:
+        self, packed_buffers: List[Tuple[int, PackedBuffer]], tag: int
+    ) -> HaloUpdateRequestPackedBuffer:
         with self.timer.clock("Irecv"):
             recv_requests = []
-            for to_rank, message in messages:
+            for to_rank, packed_buffer in packed_buffers:
                 recv_requests.append(
                     self.comm.Irecv(
-                        message.get_recv_buffer().array, source=to_rank, tag=tag,
+                        packed_buffer.get_recv_buffer().array, source=to_rank, tag=tag,
                     )
                 )
         send_requests = []
-        for _to_rank, message in messages:
+        for _to_rank, packed_buffer in packed_buffers:
             with self.timer.clock("pack"):
-                message.async_pack()
-        for to_rank, message in messages:
+                packed_buffer.async_pack()
+        for to_rank, packed_buffer in packed_buffers:
             with self.timer.clock("pack"):
-                message.synchronize()
+                packed_buffer.synchronize()
             with self.timer.clock("Isend"):
                 send_requests.append(
                     self.comm.Isend(
-                        message.get_send_buffer().array, dest=to_rank, tag=tag
+                        packed_buffer.get_send_buffer().array, dest=to_rank, tag=tag
                     )
                 )
-        return HaloUpdateRequestMessage(
-            send_requests, recv_requests, messages, self.timer
+        return HaloUpdateRequestPackedBuffer(
+            send_requests, recv_requests, packed_buffers, self.timer
         )
 
     def finish_halo_update(self, quantity: Quantity, n_points: int):
@@ -623,7 +618,7 @@ class CubedSphereCommunicator(Communicator):
         x_quantity: Union[Quantity, List[Quantity]],
         y_quantity: Union[Quantity, List[Quantity]],
         n_points: int,
-    ) -> HaloUpdateRequestMessage:
+    ) -> HaloUpdateRequestPackedBuffer:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
         Assumes the x and y dimension indices are the same between the two quantities.
@@ -650,41 +645,31 @@ class CubedSphereCommunicator(Communicator):
         CubedSphereCommunicator._device_synchronize()
         tag = self._get_halo_tag()
 
-        # Prepare messages
-        # - message dict index on rank of receiver
+        # Prepare rank/packed_buffer tuple dict
+        # - get or create a packed buffer indexed on destination rank
         # - queue for packing
-        # - allocate internal message memory
-        messages: List[Tuple[int, MessageBundle]] = []
+        # - allocate internal buffer memory
+        packed_buffers: List[Tuple[int, PackedBuffer]] = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for x_quantity, y_quantity in zip(x_quantities, y_quantities):
-                    message = self._lazy_get_messages(messages, boundary, x_quantity)
-                    self._queue_vector(
-                        message, x_quantity, y_quantity, boundary, n_points
+                    packed_buffer = self._lazy_get_packed_buffer(
+                        packed_buffers, boundary, x_quantity
                     )
-            self._allocate_messages(messages)
+                    packed_buffer.queue_vector(
+                        x_quantity,
+                        boundary.send_slice(x_quantity, n_points),
+                        y_quantity,
+                        boundary.send_slice(y_quantity, n_points),
+                        boundary.n_clockwise_rotations,
+                        boundary.recv_slice(x_quantity, n_points),
+                        boundary.recv_slice(y_quantity, n_points),
+                    )
+            self._allocate_packed_buffer(packed_buffers)
 
         # Issue asynchroneous transfer commands
-        # Includes pre-network call message packing
-        return self._Isend_Irecv_halos(messages, tag)
-
-    def _queue_vector(
-        self,
-        message: MessageBundle,
-        x_quantity: Quantity,
-        y_quantity: Quantity,
-        boundary: Boundary,
-        n_points: int,
-    ):
-        message.queue_vector_message(
-            x_quantity,
-            boundary.send_slice(x_quantity, n_points),
-            y_quantity,
-            boundary.send_slice(y_quantity, n_points),
-            boundary.n_clockwise_rotations,
-            boundary.recv_slice(x_quantity, n_points),
-            boundary.recv_slice(y_quantity, n_points),
-        )
+        # Includes pre-network call buffer packing
+        return self._Isend_Irecv_halos(packed_buffer, tag)
 
     def start_synchronize_vector_interfaces(
         self, x_quantity: Quantity, y_quantity: Quantity

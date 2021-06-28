@@ -17,7 +17,7 @@ from fv3gfs.util import (
     EAST,
     NORTHEAST,
 )
-from fv3gfs.util.message import MessageBundle
+from fv3gfs.util.packed import PackedBuffer
 from fv3gfs.util.buffer import Buffer
 from fv3gfs.util.rotate import rotate_scalar_data, rotate_vector_data
 import copy
@@ -185,8 +185,8 @@ def rotation(request):
     return request.param
 
 
-def test_message_allocate(quantity, n_halos):
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+def test_packed_buffer_allocate(quantity, n_halos):
+    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
         quantity.origin,
@@ -206,22 +206,26 @@ def test_message_allocate(quantity, n_halos):
         interior=False,
     )
 
-    message.queue_scalar_message(quantity, boundary_north, 0, boundary_north)
-    message.queue_scalar_message(quantity, boundary_southwest, 0, boundary_southwest)
-    message.allocate()
-    assert len(message.get_send_buffer().array.shape) == 1
+    packed_buffer.queue_scalar_data(
+        quantity, boundary_north, 0, boundary_north
+    )
+    packed_buffer.queue_scalar_data(
+        quantity, boundary_southwest, 0, boundary_southwest
+    )
+    packed_buffer.allocate()
+    assert len(packed_buffer.get_send_buffer().array.shape) == 1
     assert (
-        message.get_send_buffer().array.size
+        packed_buffer.get_send_buffer().array.size
         == quantity.data[boundary_north].size + quantity.data[boundary_southwest].size
     )
-    assert len(message.get_recv_buffer().array.shape) == 1
+    assert len(packed_buffer.get_recv_buffer().array.shape) == 1
     assert (
-        message.get_recv_buffer().array.size
+        packed_buffer.get_recv_buffer().array.size
         == quantity.data[boundary_north].size + quantity.data[boundary_southwest].size
     )
     # clean up
-    Buffer.push_to_cache(message._send_buffer)
-    Buffer.push_to_cache(message._recv_buffer)
+    Buffer.push_to_cache(packed_buffer._send_buffer)
+    Buffer.push_to_cache(packed_buffer._recv_buffer)
 
 
 def _get_boundaries(quantity, n_halos):
@@ -262,9 +266,9 @@ def _get_boundaries(quantity, n_halos):
     return send_boundaries, recv_boundaries
 
 
-def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
+def test_packed_buffer_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity: Quantity = copy.deepcopy(quantity)
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(quantity, n_halos)
     N_edge_boundaries = {
@@ -281,26 +285,26 @@ def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    message.queue_scalar_message(
+    packed_buffer.queue_scalar_data(
         quantity,
         N_edge_boundaries[rotation][0],
         rotation,
         N_edge_boundaries[rotation][1],
     )
-    message.queue_scalar_message(
+    packed_buffer.queue_scalar_data(
         quantity,
         NE_corner_boundaries[rotation][0],
         rotation,
         NE_corner_boundaries[rotation][1],
     )
 
-    message.allocate()
-    message.async_pack()
-    message.synchronize()
+    packed_buffer.allocate()
+    packed_buffer.async_pack()
+    packed_buffer.synchronize()
     # Simulate data transfer
-    message.get_recv_buffer().assign_from(message.get_send_buffer().array)
-    message.async_unpack()
-    message.finalize()
+    packed_buffer.get_recv_buffer().assign_from(packed_buffer.get_send_buffer().array)
+    packed_buffer.async_unpack()
+    packed_buffer.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -321,16 +325,16 @@ def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
 
     assert (original_quantity.data == quantity.data).all()
-    assert message._send_buffer is None
-    assert message._recv_buffer is None
+    assert packed_buffer._send_buffer is None
+    assert packed_buffer._recv_buffer is None
 
 
-def test_message_vector_pack_unpack(quantity, rotation, n_halos):
+def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
     original_quantity_x = copy.deepcopy(quantity)
     original_quantity_y = copy.deepcopy(original_quantity_x)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
-    message = MessageBundle.get_from_quantity_module(quantity.np)
+    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(x_quantity, n_halos)
     N_edge_boundaries = {
@@ -347,7 +351,7 @@ def test_message_vector_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    message.queue_vector_message(
+    packed_buffer.queue_vector_packed_buffer(
         x_quantity,
         N_edge_boundaries[rotation][0],
         y_quantity,
@@ -356,7 +360,7 @@ def test_message_vector_pack_unpack(quantity, rotation, n_halos):
         N_edge_boundaries[rotation][1],
         N_edge_boundaries[rotation][1],
     )
-    message.queue_vector_message(
+    packed_buffer.queue_vector_packed_buffer(
         x_quantity,
         NE_corner_boundaries[rotation][0],
         y_quantity,
@@ -365,13 +369,13 @@ def test_message_vector_pack_unpack(quantity, rotation, n_halos):
         NE_corner_boundaries[rotation][1],
         NE_corner_boundaries[rotation][1],
     )
-    message.allocate()
-    message.async_pack()
-    message.synchronize()
+    packed_buffer.allocate()
+    packed_buffer.async_pack()
+    packed_buffer.synchronize()
     # Simulate data transfer
-    message.get_recv_buffer().assign_from(message.get_send_buffer().array)
-    message.async_unpack()
-    message.finalize()
+    packed_buffer.get_recv_buffer().assign_from(packed_buffer.get_send_buffer().array)
+    packed_buffer.async_unpack()
+    packed_buffer.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -397,5 +401,5 @@ def test_message_vector_pack_unpack(quantity, rotation, n_halos):
 
     assert (original_quantity_x.data == x_quantity.data).all()
     assert (original_quantity_y.data == y_quantity.data).all()
-    assert message._send_buffer is None
-    assert message._recv_buffer is None
+    assert packed_buffer._send_buffer is None
+    assert packed_buffer._recv_buffer is None

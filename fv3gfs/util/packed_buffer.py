@@ -44,7 +44,7 @@ def _push_stream(stream: "cp.cuda.Stream"):
 
 
 # ------------------------------------------------------------------------
-# Message description & helpers
+# Packed buffer description & helpers
 
 # Keyed cached - key is a str at the moment to go around the fact that
 # a slice is not hashable. getting a string from
@@ -63,8 +63,8 @@ def _slices_length(slices: Tuple[slice]) -> int:
 
 
 @dataclass
-class MessageDescription:
-    """Description of a single message."""
+class ExchangeDataDescription:
+    """Description of a the data exchanged."""
 
     _id: UUID
     quantity: Quantity
@@ -73,8 +73,8 @@ class MessageDescription:
     recv_slices: Tuple[slice]
 
 
-class MessageBundleType(Enum):
-    """Dimensionality of the message bundle."""
+class PackedBuffer(Enum):
+    """Dimensionality of the data in the packed buffer."""
 
     UNKNOWN = 0
     SCALAR = 1
@@ -82,17 +82,17 @@ class MessageBundleType(Enum):
 
 
 # ------------------------------------------------------------------------
-# MessageBundle classes
+# PackedBuffer classes
 
 
-class MessageBundle:
+class PackedBuffer:
     """Pack/unpack multiple nD array into/from a single buffer.
 
     The class is responsible for packing & unpacking, not communication.
     Order of operations:
-    - get MessageBundle via get_from_quantity_module
+    - get PackedBuffer via get_from_quantity_module
     (user should re-use the same if it goes to the same destination)
-    - queue N messages via queue_scalar & queue_vector (can't mix and match scalar & vector)
+    - queue N packed_buffers via queue_scalar & queue_vector (can't mix and match scalar & vector)
     - allocate (WARNING: do not queue after allocation!)
     [From here get_recv_buffer() is valid]
     - async_pack
@@ -110,14 +110,14 @@ class MessageBundle:
     _send_buffer: Optional[Buffer]
     _recv_buffer: Optional[Buffer]
 
-    _x_infos: List[MessageDescription]
-    _y_infos: List[MessageDescription]
+    _x_infos: List[ExchangeDataDescription]
+    _y_infos: List[ExchangeDataDescription]
 
-    _type: MessageBundleType = MessageBundleType.UNKNOWN
+    _type: PackedBuffer = PackedBuffer.UNKNOWN
 
     def __init__(self, np_module: NumpyModule) -> None:
         """Init routine.
-        
+
         Arguments:
             np_module: numpy-like module for allocation
         """
@@ -133,44 +133,41 @@ class MessageBundle:
         assert self._recv_buffer is None
 
     @staticmethod
-    def get_from_quantity_module(np_module: NumpyModule) -> "MessageBundle":
+    def get_from_quantity_module(np_module: NumpyModule) -> "PackedBuffer":
         """Construct a module from a numpy-like module.
 
         Arguments:
-            np_module: numpy-like module to determin child message type.
+            np_module: numpy-like module to determin child packed_buffer type.
 
-        Return: an initialized Message.
+        Return: an initialized packed buffer.
         """
         if np_module is np:
-            return MessageBundleCPU(np)
+            return PackedBufferCPU(np)
         elif np_module is cp:
-            return MessageBundleGPU(cp)
+            return PackedBufferGPU(cp)
 
         raise NotImplementedError(
-            f"Quantity module {np_module} has no MessageBundle implemented"
+            f"Quantity module {np_module} has no PackedBuffer implemented"
         )
 
-    def queue_scalar_message(
+    def queue_scalar(
         self,
         quantity: Quantity,
         send_slice: Tuple[slice],
         n_clockwise_rotation: int,
         recv_slice: Tuple[slice],
     ):
-        """Add message scalar packing information to the bundle."""
-        assert (
-            self._type == MessageBundleType.SCALAR
-            or self._type == MessageBundleType.UNKNOWN
-        )
+        """Add packed_buffer scalar packing information to the bundle."""
+        assert self._type == PackedBuffer.SCALAR or self._type == PackedBuffer.UNKNOWN
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
                 "Buffer previously allocated are not longer correct."
-                "Make sure to queue all message before calling allocate."
+                "Make sure to queue all packed_buffer before calling allocate."
             )
 
-        self._type = MessageBundleType.SCALAR
+        self._type = PackedBuffer.SCALAR
         self._x_infos.append(
-            MessageDescription(
+            ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=quantity,
                 send_slices=send_slice,
@@ -179,7 +176,7 @@ class MessageBundle:
             )
         )
 
-    def queue_vector_message(
+    def queue_vector(
         self,
         x_quantity: Quantity,
         x_send_slice: Tuple[slice],
@@ -189,19 +186,16 @@ class MessageBundle:
         x_recv_slice: Tuple[slice],
         y_recv_slice: Tuple[slice],
     ):
-        """Add message vector packing information to the bundle."""
-        assert (
-            self._type == MessageBundleType.VECTOR
-            or self._type == MessageBundleType.UNKNOWN
-        )
+        """Add packed_buffer vector packing information to the bundle."""
+        assert self._type == PackedBuffer.VECTOR or self._type == PackedBuffer.UNKNOWN
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
                 "Buffer previously allocated are not longer correct."
-                "Make sure to queue all message before calling allocate."
+                "Make sure to queue all packed_buffer before calling allocate."
             )
-        self._type = MessageBundleType.VECTOR
+        self._type = PackedBuffer.VECTOR
         self._x_infos.append(
-            MessageDescription(
+            ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=x_quantity,
                 send_slices=x_send_slice,
@@ -210,7 +204,7 @@ class MessageBundle:
             )
         )
         self._y_infos.append(
-            MessageDescription(
+            ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=y_quantity,
                 send_slices=y_send_slice,
@@ -221,7 +215,7 @@ class MessageBundle:
 
     def get_recv_buffer(self) -> Buffer:
         """Retrieve receive buffer.
-        
+
         WARNING: Only available _after_ `allocate` as been called.
         """
         if self._recv_buffer is None:
@@ -230,7 +224,7 @@ class MessageBundle:
 
     def get_send_buffer(self):
         """Retrieve send buffer.
-        
+
         WARNING: Only available _after_ `allocate` as been called.
         """
         if self._send_buffer is None:
@@ -246,7 +240,7 @@ class MessageBundle:
         for x_info in self._x_infos:
             buffer_size += _slices_length(x_info.send_slices)
             dtype = x_info.quantity.metadata.dtype
-        if self._type is MessageBundleType.VECTOR:
+        if self._type is PackedBuffer.VECTOR:
             for y_info in self._y_infos:
                 buffer_size += _slices_length(y_info.send_slices)
 
@@ -263,7 +257,7 @@ class MessageBundle:
         return self._send_buffer is not None and self._recv_buffer is not None
 
     def async_pack(self):
-        """Pack all queued messages into a single send Buffer.
+        """Pack all queued packed_buffers into a single send Buffer.
 
         Implementation should guarantee the send Buffer is ready for MPI communication.
         The send Buffer is held by this class."""
@@ -284,32 +278,32 @@ class MessageBundle:
 
     def synchronize(self):
         """Synchronize all operations.
-        
+
         Implementation guarantees all memory is now safe to access.
         """
         raise NotImplementedError()
 
 
-class MessageBundleCPU(MessageBundle):
+class PackedBufferCPU(PackedBuffer):
     def synchronize(self):
         # CPU doesn't do true async
         pass
 
     def async_pack(self):
         # Unpack per type
-        if self._type == MessageBundleType.SCALAR:
+        if self._type == PackedBuffer.SCALAR:
             self._pack_scalar()
-        elif self._type == MessageBundleType.VECTOR:
+        elif self._type == PackedBuffer.VECTOR:
             self._pack_vector()
         else:
-            raise RuntimeError(f"Unimplemented {self._type} message pack")
+            raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
 
         self._send_buffer.finalize_memory_transfer()
 
     def _pack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
-            message_size = _slices_length(x_info.send_slices)
+            packed_buffer_size = _slices_length(x_info.send_slices)
             # sending data across the boundary will rotate the data
             # n_clockwise_rotations times, due to the difference in axis orientation.\
             # Thus we rotate that number of times counterclockwise before sending,
@@ -322,9 +316,9 @@ class MessageBundleCPU(MessageBundle):
             )
             self._send_buffer.assign_from(
                 flatten(source_view),
-                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
             )
-            offset += message_size
+            offset += packed_buffer_size
 
     def _pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -342,7 +336,7 @@ class MessageBundleCPU(MessageBundle):
                 x_info.quantity.np,
             )
 
-            # Pack X/Y messages in the buffer
+            # Pack X/Y packed_buffers in the buffer
             self._send_buffer.assign_from(
                 flatten(x_view),
                 buffer_slice=np.index_exp[offset : offset + x_view.size],
@@ -356,12 +350,12 @@ class MessageBundleCPU(MessageBundle):
 
     def async_unpack(self):
         # Unpack per type
-        if self._type == MessageBundleType.SCALAR:
+        if self._type == PackedBuffer.SCALAR:
             self._unpack_scalar()
-        elif self._type == MessageBundleType.VECTOR:
+        elif self._type == PackedBuffer.VECTOR:
             self._unpack_vector()
         else:
-            raise RuntimeError(f"Unimplemented {self._type} message unpack")
+            raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
 
         self._recv_buffer.finalize_memory_transfer()
 
@@ -375,39 +369,39 @@ class MessageBundleCPU(MessageBundle):
         offset = 0
         for x_info in self._x_infos:
             quantity_view = x_info.quantity.data[x_info.recv_slices]
-            message_size = _slices_length(x_info.recv_slices)
+            packed_buffer_size = _slices_length(x_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += message_size
+            offset += packed_buffer_size
 
     def _unpack_vector(self):
         offset = 0
         for x_info, y_info in zip(self._x_infos, self._y_infos):
             quantity_view = x_info.quantity.data[x_info.recv_slices]
-            message_size = _slices_length(x_info.recv_slices)
+            packed_buffer_size = _slices_length(x_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += message_size
+            offset += packed_buffer_size
             quantity_view = y_info.quantity.data[y_info.recv_slices]
-            message_size = _slices_length(y_info.recv_slices)
+            packed_buffer_size = _slices_length(y_info.recv_slices)
             self._recv_buffer.assign_to(
                 quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
+                buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
                 buffer_reshape=quantity_view.shape,
             )
-            offset += message_size
+            offset += packed_buffer_size
 
     def finalize(self):
         pass
 
 
-class MessageBundleGPU(MessageBundle):
+class PackedBufferGPU(PackedBuffer):
     @dataclass
     class CuKernelArgs:
         """All arguments requireds for the CUDA kernels."""
@@ -420,7 +414,7 @@ class MessageBundleGPU(MessageBundle):
 
     def __init__(self, np_module: NumpyModule) -> None:
         super().__init__(np_module)
-        self._cu_kernel_args: Dict[UUID, MessageBundleGPU.CuKernelArgs] = {}
+        self._cu_kernel_args: Dict[UUID, PackedBufferGPU.CuKernelArgs] = {}
 
     def _build_flatten_indices(
         self,
@@ -461,29 +455,38 @@ class MessageBundleGPU(MessageBundle):
         INDICES_GPU_CACHE[key] = arr_indices_gpu
 
     def _flatten_indices(
-        self, message_info: MessageDescription, slices: Tuple[slice], rotate: bool
+        self,
+        packed_buffer_info: ExchangeDataDescription,
+        slices: Tuple[slice],
+        rotate: bool,
     ) -> "cp.ndarray":
-        """Extract a flat array of indices for the send message.
+        """Extract a flat array of indices for the send packed_buffer.
 
         Also take care of rotating the indices to account for axis orientation
         """
-        strides = message_info.quantity.data.strides
-        itemsize = message_info.quantity.data.itemsize
-        shape = message_info.quantity.data.shape
+        strides = packed_buffer_info.quantity.data.strides
+        itemsize = packed_buffer_info.quantity.data.itemsize
+        shape = packed_buffer_info.quantity.data.shape
         key = str(
-            (slices, message_info.send_clockwise_rotation, shape, strides, itemsize)
+            (
+                slices,
+                packed_buffer_info.send_clockwise_rotation,
+                shape,
+                strides,
+                itemsize,
+            )
         )
 
         if key not in INDICES_GPU_CACHE.keys():
             self._build_flatten_indices(
                 key,
-                message_info.quantity.data[slices].shape,
-                message_info.quantity.dims,
+                packed_buffer_info.quantity.data[slices].shape,
+                packed_buffer_info.quantity.dims,
                 strides,
                 itemsize,
                 slices,
                 rotate,
-                message_info.send_clockwise_rotation,
+                packed_buffer_info.send_clockwise_rotation,
             )
 
         # We don't return a copy since the indices are read-only in the algorithm
@@ -495,7 +498,7 @@ class MessageBundleGPU(MessageBundle):
         # Allocate the streams & build the indices arrays
         if len(self._y_infos) == 0:
             for x_info in self._x_infos:
-                self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
+                self._cu_kernel_args[x_info._id] = PackedBufferGPU.CuKernelArgs(
                     stream=_pop_stream(),
                     x_send_indices=self._flatten_indices(
                         x_info, x_info.send_slices, True
@@ -508,7 +511,7 @@ class MessageBundleGPU(MessageBundle):
                 )
         else:
             for x_info, y_info in zip(self._x_infos, self._y_infos):
-                self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
+                self._cu_kernel_args[x_info._id] = PackedBufferGPU.CuKernelArgs(
                     stream=_pop_stream(),
                     x_send_indices=self._flatten_indices(
                         x_info, x_info.send_slices, True
@@ -543,12 +546,12 @@ class MessageBundleGPU(MessageBundle):
 
     def async_pack(self):
         # Unpack per type
-        if self._type == MessageBundleType.SCALAR:
+        if self._type == PackedBuffer.SCALAR:
             self._opt_pack_scalar()
-        elif self._type == MessageBundleType.VECTOR:
+        elif self._type == PackedBuffer.VECTOR:
             self._opt_pack_vector()
         else:
-            raise RuntimeError(f"Unimplemented {self._type} message pack")
+            raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
 
     def _opt_pack_scalar(self):
         offset = 0
@@ -558,29 +561,29 @@ class MessageBundleGPU(MessageBundle):
             # Use private stream
             self._use_stream(cu_kernel_args.stream)
 
-            # Message size
-            message_size = _slices_length(x_info.send_slices)
+            # Buffer size
+            packed_buffer_size = _slices_length(x_info.send_slices)
 
             if x_info.quantity.metadata.dtype != np.float64:
                 raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
             # Launch kernel
             blocks = 128
-            grid_x = (message_size // blocks) + 1
+            grid_x = (packed_buffer_size // blocks) + 1
             pack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
                     x_info.quantity.data[:],  # source_array
                     cu_kernel_args.x_send_indices,  # indices
-                    message_size,  # nIndex
+                    packed_buffer_size,  # nIndex
                     offset,
                     self._send_buffer.array,
                 ),
             )
 
-            # Next message offset into send buffer
-            offset += message_size
+            # Next packed_buffer offset into send buffer
+            offset += packed_buffer_size
 
     def _opt_pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -591,17 +594,17 @@ class MessageBundleGPU(MessageBundle):
             # Use private stream
             self._use_stream(cu_kernel_args.stream)
 
-            # Message sizes
-            message_size_x = _slices_length(x_info.send_slices)
-            message_size_y = _slices_length(y_info.send_slices)
-            message_size = message_size_x + message_size_y
+            # Buffer sizes
+            packed_buffer_size_x = _slices_length(x_info.send_slices)
+            packed_buffer_size_y = _slices_length(y_info.send_slices)
+            packed_buffer_size = packed_buffer_size_x + packed_buffer_size_y
 
             if x_info.quantity.metadata.dtype != np.float64:
                 raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
             # Launch kernel
             blocks = 128
-            grid_x = (message_size // blocks) + 1
+            grid_x = (packed_buffer_size // blocks) + 1
             pack_vector_f64_kernel(
                 (blocks,),
                 (grid_x,),
@@ -610,25 +613,25 @@ class MessageBundleGPU(MessageBundle):
                     y_info.quantity.data[:],  # source_array_y
                     cu_kernel_args.x_send_indices,  # indices_x
                     cu_kernel_args.y_send_indices,  # indices_y
-                    message_size_x,  # nIndex_x
-                    message_size_y,  # nIndex_y
+                    packed_buffer_size_x,  # nIndex_x
+                    packed_buffer_size_y,  # nIndex_y
                     offset,
                     (-x_info.send_clockwise_rotation) % 4,  # rotation
                     self._send_buffer.array,
                 ),
             )
 
-            # Next message offset into send buffer
-            offset += message_size
+            # Next packed_buffer offset into send buffer
+            offset += packed_buffer_size
 
     def async_unpack(self):
         # Unpack per type
-        if self._type == MessageBundleType.SCALAR:
+        if self._type == PackedBuffer.SCALAR:
             self._opt_unpack_scalar()
-        elif self._type == MessageBundleType.VECTOR:
+        elif self._type == PackedBuffer.VECTOR:
             self._opt_unpack_vector()
         else:
-            raise RuntimeError(f"Unimplemented {self._type} message unpack")
+            raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
 
     def _opt_unpack_scalar(self):
         offset = 0
@@ -638,23 +641,23 @@ class MessageBundleGPU(MessageBundle):
             self._use_stream(kernel_args.stream)
 
             # Launch kernel
-            message_size = _slices_length(x_info.recv_slices)
+            packed_buffer_size = _slices_length(x_info.recv_slices)
             blocks = 128
-            grid_x = (message_size // blocks) + 1
+            grid_x = (packed_buffer_size // blocks) + 1
             unpack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
                     self._recv_buffer.array,  # source_buffer
                     kernel_args.x_recv_indices,  # indices
-                    message_size,  # nIndex
+                    packed_buffer_size,  # nIndex
                     offset,
                     x_info.quantity.data[:],  # destination_array
                 ),
             )
 
-            # Next message offset into recv buffer
-            offset += message_size
+            # Next packed_buffer offset into recv buffer
+            offset += packed_buffer_size
 
     def _opt_unpack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -668,14 +671,14 @@ class MessageBundleGPU(MessageBundle):
             cu_kernel_args = self._cu_kernel_args[x_info._id]
             self._use_stream(cu_kernel_args.stream)
 
-            # Message sizes
-            message_size_x = _slices_length(x_info.recv_slices)
-            message_size_y = _slices_length(y_info.recv_slices)
-            message_size = message_size_x + message_size_y
+            # Buffer sizes
+            packed_buffer_size_x = _slices_length(x_info.recv_slices)
+            packed_buffer_size_y = _slices_length(y_info.recv_slices)
+            packed_buffer_size = packed_buffer_size_x + packed_buffer_size_y
 
             # Launch kernel
             blocks = 128
-            grid_x = (message_size // blocks) + 1
+            grid_x = (packed_buffer_size // blocks) + 1
             unpack_vector_f64_kernel(
                 (blocks,),
                 (grid_x,),
@@ -683,16 +686,16 @@ class MessageBundleGPU(MessageBundle):
                     self._recv_buffer.array,
                     cu_kernel_args.x_recv_indices,  # indices_x
                     cu_kernel_args.y_recv_indices,  # indices_y
-                    message_size_x,  # nIndex_x
-                    message_size_y,  # nIndex_y
+                    packed_buffer_size_x,  # nIndex_x
+                    packed_buffer_size_y,  # nIndex_y
                     offset,
                     x_info.quantity.data[:],  # destination_array_x
                     y_info.quantity.data[:],  # destination_array_y
                 ),
             )
 
-            # Next message offset into send buffer
-            offset += message_size
+            # Next packed_buffer offset into send buffer
+            offset += packed_buffer_size
 
     def finalize(self):
         # Synchronize all work
