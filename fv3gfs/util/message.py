@@ -19,19 +19,17 @@ try:
     import cupy as cp
 except ImportError:
     cp = None
-
+# ------------------------------------------------------------------------
 # Temporary "safe" code path
 #  _CODE_PATH_DEVICE_WIDE_SYNC: turns off streaming and issue a single
 #   device wide synchronization call instead
+
 _CODE_PATH_DEVICE_WIDE_SYNC = False
 
-# Keyed cached - key is a str at the moment to go around the fact that
-# a slice is not hashable
-# getting a string from Tuple(slices, rotation, shape, strides, itemsize)
-# IndicesKey = str(Tuple[Any, int, Tuple[int], Tuple[int], int]) #noqa
-INDICES_GPU_CACHE: Dict[str, "cp.ndarray"] = {}
+# ------------------------------------------------------------------------
+# Simple pool of streams to lower the driver pressure
+# Use _pop/_push_stream to manipulate the pool
 
-# Simple pool of streams
 STREAM_POOL: List["cp.cuda.Stream"] = []
 
 
@@ -45,8 +43,18 @@ def _push_stream(stream: "cp.cuda.Stream"):
     STREAM_POOL.append(stream)
 
 
+# ------------------------------------------------------------------------
+# Message description & helpers
+
+# Keyed cached - key is a str at the moment to go around the fact that
+# a slice is not hashable. getting a string from
+# Tuple(slices, rotation, shape, strides, itemsize) e.g. # noqa
+# str(Tuple[Any, int, Tuple[int], Tuple[int], int]) # noqa
+INDICES_GPU_CACHE: Dict[str, "cp.ndarray"] = {}
+
+
 def _slices_length(slices: Tuple[slice]) -> int:
-    """Compute linear size from slices"""
+    """Compute linear size from slices."""
     length = 1
     for s in slices:
         assert s.step is None
@@ -55,7 +63,7 @@ def _slices_length(slices: Tuple[slice]) -> int:
 
 
 @dataclass
-class MessageMetadata:
+class MessageDescription:
     """Description of a single message."""
 
     _id: UUID
@@ -73,6 +81,10 @@ class MessageBundleType(Enum):
     VECTOR = 2
 
 
+# ------------------------------------------------------------------------
+# MessageBundle classes
+
+
 class MessageBundle:
     """Pack/unpack multiple nD array into/from a single buffer.
 
@@ -80,49 +92,62 @@ class MessageBundle:
     Order of operations:
     - get MessageBundle via get_from_quantity_module
     (user should re-use the same if it goes to the same destination)
-    - queue N messages via queue_scalar & queue_vector
+    - queue N messages via queue_scalar & queue_vector (can't mix and match scalar & vector)
     - allocate (WARNING: do not queue after allocation!)
     [From here get_recv_buffer() is valid]
     - async_pack
     - synchronize
     [From here get_send_buffer() is valid]
-    ... user should communicate the buffers...
+    [... user should communicate the buffers...]
     - async_unpack
-    - synchronize
-    [All buffers return to their buffer cache, therefore invalid]
+    - finalize
+    [All buffers are returned to their buffer cache, therefore invalid]
+
+    If the user doesn't want the buffer return to the cache, it can use `synchronize` instead
+    of `finalize`
     """
 
-    _send_buffer: Optional[Buffer] = None
-    _recv_buffer: Optional[Buffer] = None
+    _send_buffer: Optional[Buffer]
+    _recv_buffer: Optional[Buffer]
 
-    _x_infos: List[MessageMetadata]
-    _y_infos: List[MessageMetadata]
+    _x_infos: List[MessageDescription]
+    _y_infos: List[MessageDescription]
 
     _type: MessageBundleType = MessageBundleType.UNKNOWN
 
-    def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
-        self.to_rank = to_rank
+    def __init__(self, np_module: NumpyModule) -> None:
+        """Init routine.
+        
+        Arguments:
+            np_module: numpy-like module for allocation
+        """
         self._np_module = np_module
         self._x_infos = []
         self._y_infos = []
-        assert self._send_buffer is None
-        assert self._recv_buffer is None
+        self._send_buffer = None
+        self._recv_buffer = None
 
     def __del__(self):
+        """Del routine, making sure all buffers were inserted back into cache."""
         assert self._send_buffer is None
         assert self._recv_buffer is None
 
     @staticmethod
-    def get_from_quantity_module(
-        to_rank: int, qty_module: NumpyModule
-    ) -> "MessageBundle":
-        if qty_module is np:
-            return MessageBundleCPU(to_rank, np)
-        elif qty_module is cp:
-            return MessageBundleGPU(to_rank, cp)
+    def get_from_quantity_module(np_module: NumpyModule) -> "MessageBundle":
+        """Construct a module from a numpy-like module.
+
+        Arguments:
+            np_module: numpy-like module to determin child message type.
+
+        Return: an initialized Message.
+        """
+        if np_module is np:
+            return MessageBundleCPU(np)
+        elif np_module is cp:
+            return MessageBundleGPU(cp)
 
         raise NotImplementedError(
-            f"Quantity module {qty_module} has no MessageBundle implemented"
+            f"Quantity module {np_module} has no MessageBundle implemented"
         )
 
     def queue_scalar_message(
@@ -131,14 +156,8 @@ class MessageBundle:
         send_slice: Tuple[slice],
         n_clockwise_rotation: int,
         recv_slice: Tuple[slice],
-    ) -> None:
-        """Add message information to the bundle.
-
-        Send array & rotation parameter for later packing.
-        Recv array for later unpacking. Pop a recv Buffer for transfer.
-        Recv buffer is held by the class.
-        The function will also compute & store the slicing of the arrays.
-        """
+    ):
+        """Add message scalar packing information to the bundle."""
         assert (
             self._type == MessageBundleType.SCALAR
             or self._type == MessageBundleType.UNKNOWN
@@ -151,7 +170,7 @@ class MessageBundle:
 
         self._type = MessageBundleType.SCALAR
         self._x_infos.append(
-            MessageMetadata(
+            MessageDescription(
                 _id=uuid1(),
                 quantity=quantity,
                 send_slices=send_slice,
@@ -169,7 +188,8 @@ class MessageBundle:
         n_clockwise_rotation: int,
         x_recv_slice: Tuple[slice],
         y_recv_slice: Tuple[slice],
-    ) -> None:
+    ):
+        """Add message vector packing information to the bundle."""
         assert (
             self._type == MessageBundleType.VECTOR
             or self._type == MessageBundleType.UNKNOWN
@@ -181,7 +201,7 @@ class MessageBundle:
             )
         self._type = MessageBundleType.VECTOR
         self._x_infos.append(
-            MessageMetadata(
+            MessageDescription(
                 _id=uuid1(),
                 quantity=x_quantity,
                 send_slices=x_send_slice,
@@ -190,7 +210,7 @@ class MessageBundle:
             )
         )
         self._y_infos.append(
-            MessageMetadata(
+            MessageDescription(
                 _id=uuid1(),
                 quantity=y_quantity,
                 send_slices=y_send_slice,
@@ -199,17 +219,27 @@ class MessageBundle:
             )
         )
 
-    def get_recv_buffer(self):
+    def get_recv_buffer(self) -> Buffer:
+        """Retrieve receive buffer.
+        
+        WARNING: Only available _after_ `allocate` as been called.
+        """
         if self._recv_buffer is None:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
         return self._recv_buffer
 
     def get_send_buffer(self):
+        """Retrieve send buffer.
+        
+        WARNING: Only available _after_ `allocate` as been called.
+        """
         if self._send_buffer is None:
             raise RuntimeError("Send buffer can't be retrieved before allocate()")
         return self._send_buffer
 
     def allocate(self):
+        """Allocate contiguous memory buffers from description queued."""
+
         # Compute required size
         buffer_size = 0
         dtype = None
@@ -220,7 +250,7 @@ class MessageBundle:
             for y_info in self._y_infos:
                 buffer_size += _slices_length(y_info.send_slices)
 
-        # Demand a properly size buffers
+        # Retrieve two properly sized buffers
         self._send_buffer = Buffer.pop_from_cache(
             self._np_module.empty, (buffer_size), dtype
         )
@@ -228,7 +258,8 @@ class MessageBundle:
             self._np_module.empty, (buffer_size), dtype
         )
 
-    def ready(self):
+    def ready(self) -> bool:
+        """Check if the buffers are ready for communication."""
         return self._send_buffer is not None and self._recv_buffer is not None
 
     def async_pack(self):
@@ -252,12 +283,16 @@ class MessageBundle:
         raise NotImplementedError()
 
     def synchronize(self):
+        """Synchronize all operations.
+        
+        Implementation guarantees all memory is now safe to access.
+        """
         raise NotImplementedError()
 
 
 class MessageBundleCPU(MessageBundle):
     def synchronize(self):
-        # CPU doesn't do true async (for now)
+        # CPU doesn't do true async
         pass
 
     def async_pack(self):
@@ -383,8 +418,8 @@ class MessageBundleGPU(MessageBundle):
         y_send_indices: Optional["cp.ndarray"]
         y_recv_indices: Optional["cp.ndarray"]
 
-    def __init__(self, to_rank: int, np_module: NumpyModule) -> None:
-        super().__init__(to_rank, np_module)
+    def __init__(self, np_module: NumpyModule) -> None:
+        super().__init__(np_module)
         self._cu_kernel_args: Dict[UUID, MessageBundleGPU.CuKernelArgs] = {}
 
     def _build_flatten_indices(
@@ -426,7 +461,7 @@ class MessageBundleGPU(MessageBundle):
         INDICES_GPU_CACHE[key] = arr_indices_gpu
 
     def _flatten_indices(
-        self, message_info: MessageMetadata, slices: Tuple[slice], rotate: bool
+        self, message_info: MessageDescription, slices: Tuple[slice], rotate: bool
     ) -> "cp.ndarray":
         """Extract a flat array of indices for the send message.
 
@@ -595,32 +630,6 @@ class MessageBundleGPU(MessageBundle):
         else:
             raise RuntimeError(f"Unimplemented {self._type} message unpack")
 
-    def finalize(self):
-        # Synchronize all work
-        self.synchronize()
-
-        # Push the buffers back in the cache
-        Buffer.push_to_cache(self._send_buffer)
-        self._send_buffer = None
-        Buffer.push_to_cache(self._recv_buffer)
-        self._recv_buffer = None
-
-        # Push the streams back in the pool
-        for cu_info in self._cu_kernel_args.values():
-            _push_stream(cu_info.stream)
-
-    def _cupy_unpack_scalar(self):
-        offset = 0
-        for x_info in self._x_infos:
-            quantity_view = x_info.quantity.data[x_info.recv_slices]
-            message_size = _slices_length(x_info.recv_slices)
-            self._recv_buffer.assign_to(
-                quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
-                buffer_reshape=quantity_view.shape,
-            )
-            offset += message_size
-
     def _opt_unpack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
@@ -684,3 +693,17 @@ class MessageBundleGPU(MessageBundle):
 
             # Next message offset into send buffer
             offset += message_size
+
+    def finalize(self):
+        # Synchronize all work
+        self.synchronize()
+
+        # Push the buffers back in the cache
+        Buffer.push_to_cache(self._send_buffer)
+        self._send_buffer = None
+        Buffer.push_to_cache(self._recv_buffer)
+        self._recv_buffer = None
+
+        # Push the streams back in the pool
+        for cu_info in self._cu_kernel_args.values():
+            _push_stream(cu_info.stream)

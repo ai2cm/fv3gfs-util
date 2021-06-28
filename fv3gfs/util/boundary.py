@@ -1,11 +1,12 @@
 import dataclasses
 from .quantity import Quantity
 from ._boundary_utils import get_boundary_slice
+from typing import Tuple
 
 
 @dataclasses.dataclass
 class Boundary:
-    """Maps part of a subtile domain to another rank which shares halo points"""
+    """Maps part of a subtile domain to another rank which shares halo points."""
 
     from_rank: int
     to_rank: int
@@ -34,13 +35,36 @@ class Boundary:
         """
         return self._view(quantity, n_points, interior=False)
 
-    def send_slice(self, quantity: Quantity, n_points: int):
+    def send_slice(self, quantity: Quantity, n_points: int) -> Tuple(slice):
+        """Return the index slices which shoud be sent at this boundary.
+
+        Args:
+            quantity: quantity for which to return slices
+            n_points: the width of boundary to include
+        
+        Returns:
+            A tuple of slices (one per dimensions)
+        """
         return self._slice(quantity, n_points, interior=True)
 
-    def recv_slice(self, quantity: Quantity, n_points: int):
+    def recv_slice(self, quantity: Quantity, n_points: int) -> Tuple(slice):
+        """Return the index slices which shoud be received at this boundary.
+
+        Args:
+            quantity: quantity for which to return slices
+            n_points: the width of boundary to include
+        
+        Returns:
+            A tuple of slices (one per dimensions)
+        """
         return self._slice(quantity, n_points, interior=False)
 
-    def _slice(self, quantity: Quantity, n_points: int, interior: bool):
+    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple(slice):
+        """Abstract function to be reimplemented by child class.
+        
+        Return:
+            A tuple of slices (one per dimensions)
+        """
         raise NotImplementedError()
 
     def _view(self, quantity: Quantity, n_points: int, interior: bool):
