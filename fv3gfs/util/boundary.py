@@ -48,7 +48,7 @@ class Boundary:
         return self._slice(quantity, n_points, interior=True)
 
     def recv_slice(self, quantity: Quantity, n_points: int) -> Tuple[slice]:
-        """Return the index slices which shoud be received at this boundary.
+        """Return the index slices which should be received at this boundary.
 
         Args:
             quantity: quantity for which to return slices
