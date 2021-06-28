@@ -20,8 +20,10 @@ try:
 except ImportError:
     cp = None
 
+# Temporary "safe" code path
+#  _CODE_PATH_DEVICE_WIDE_SYNC: turns off streaming and issue a single
+#   device wide synchronization call instead
 _CODE_PATH_DEVICE_WIDE_SYNC = False
-_CODE_PATH_CUPY = False
 
 # Keyed cached - key is a str at the moment to go around the fact that
 # a slice is not hashable
@@ -373,6 +375,8 @@ class MessageBundleCPU(MessageBundle):
 class MessageBundleGPU(MessageBundle):
     @dataclass
     class CuKernelArgs:
+        """All arguments requireds for the CUDA kernels."""
+
         stream: "cp.cuda.Stream"
         x_send_indices: "cp.ndarray"
         x_recv_indices: "cp.ndarray"
@@ -454,37 +458,36 @@ class MessageBundleGPU(MessageBundle):
         # Super to get buffer allocation
         super().allocate()
         # Allocate the streams & build the indices arrays
-        if not _CODE_PATH_CUPY:
-            if len(self._y_infos) == 0:
-                for x_info in self._x_infos:
-                    self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
-                        stream=_pop_stream(),
-                        x_send_indices=self._flatten_indices(
-                            x_info, x_info.send_slices, True
-                        ),
-                        x_recv_indices=self._flatten_indices(
-                            x_info, x_info.recv_slices, False
-                        ),
-                        y_send_indices=None,
-                        y_recv_indices=None,
-                    )
-            else:
-                for x_info, y_info in zip(self._x_infos, self._y_infos):
-                    self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
-                        stream=_pop_stream(),
-                        x_send_indices=self._flatten_indices(
-                            x_info, x_info.send_slices, True
-                        ),
-                        x_recv_indices=self._flatten_indices(
-                            x_info, x_info.recv_slices, False
-                        ),
-                        y_send_indices=self._flatten_indices(
-                            y_info, y_info.send_slices, True
-                        ),
-                        y_recv_indices=self._flatten_indices(
-                            y_info, y_info.recv_slices, False
-                        ),
-                    )
+        if len(self._y_infos) == 0:
+            for x_info in self._x_infos:
+                self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
+                    stream=_pop_stream(),
+                    x_send_indices=self._flatten_indices(
+                        x_info, x_info.send_slices, True
+                    ),
+                    x_recv_indices=self._flatten_indices(
+                        x_info, x_info.recv_slices, False
+                    ),
+                    y_send_indices=None,
+                    y_recv_indices=None,
+                )
+        else:
+            for x_info, y_info in zip(self._x_infos, self._y_infos):
+                self._cu_kernel_args[x_info._id] = MessageBundleGPU.CuKernelArgs(
+                    stream=_pop_stream(),
+                    x_send_indices=self._flatten_indices(
+                        x_info, x_info.send_slices, True
+                    ),
+                    x_recv_indices=self._flatten_indices(
+                        x_info, x_info.recv_slices, False
+                    ),
+                    y_send_indices=self._flatten_indices(
+                        y_info, y_info.send_slices, True
+                    ),
+                    y_recv_indices=self._flatten_indices(
+                        y_info, y_info.recv_slices, False
+                    ),
+                )
 
     def synchronize(self):
         if _CODE_PATH_DEVICE_WIDE_SYNC:
@@ -506,37 +509,11 @@ class MessageBundleGPU(MessageBundle):
     def async_pack(self):
         # Unpack per type
         if self._type == MessageBundleType.SCALAR:
-            if _CODE_PATH_CUPY:
-                self._cupy_pack_scalar()
-            else:
-                self._opt_pack_scalar()
+            self._opt_pack_scalar()
         elif self._type == MessageBundleType.VECTOR:
-            if _CODE_PATH_CUPY:
-                self._cupy_pack_vector()
-            else:
-                self._opt_pack_vector()
+            self._opt_pack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} message pack")
-
-    def _cupy_pack_scalar(self):
-        offset = 0
-        for x_info in self._x_infos:
-            message_size = _slices_length(x_info.send_slices)
-            # sending data across the boundary will rotate the data
-            # n_clockwise_rotations times, due to the difference in axis orientation.\
-            # Thus we rotate that number of times counterclockwise before sending,
-            # to get the right final orientation
-            source_view = rotate_scalar_data(
-                x_info.quantity.data[x_info.send_slices],
-                x_info.quantity.dims,
-                x_info.quantity.np,
-                -x_info.send_clockwise_rotation,
-            )
-            self._send_buffer.assign_from(
-                flatten(source_view),
-                buffer_slice=np.index_exp[offset : offset + message_size],
-            )
-            offset += message_size
 
     def _opt_pack_scalar(self):
         offset = 0
@@ -569,34 +546,6 @@ class MessageBundleGPU(MessageBundle):
 
             # Next message offset into send buffer
             offset += message_size
-
-    def _cupy_pack_vector(self):
-        assert len(self._x_infos) == len(self._y_infos)
-        offset = 0
-        for x_info, y_info in zip(self._x_infos, self._y_infos):
-            # sending data across the boundary will rotate the data
-            # n_clockwise_rotations times, due to the difference in axis orientation
-            # Thus we rotate that number of times counterclockwise before sending,
-            # to get the right final orientation
-            x_view, y_view = rotate_vector_data(
-                x_info.quantity.data[x_info.send_slices],
-                y_info.quantity.data[y_info.send_slices],
-                -x_info.send_clockwise_rotation,
-                x_info.quantity.dims,
-                x_info.quantity.np,
-            )
-
-            # Pack X/Y messages in the buffer
-            self._send_buffer.assign_from(
-                flatten(x_view),
-                buffer_slice=np.index_exp[offset : offset + x_view.size],
-            )
-            offset += x_view.size
-            self._send_buffer.assign_from(
-                flatten(y_view),
-                buffer_slice=np.index_exp[offset : offset + y_view.size],
-            )
-            offset += y_view.size
 
     def _opt_pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -640,15 +589,9 @@ class MessageBundleGPU(MessageBundle):
     def async_unpack(self):
         # Unpack per type
         if self._type == MessageBundleType.SCALAR:
-            if _CODE_PATH_CUPY:
-                self._cupy_unpack_scalar()
-            else:
-                self._opt_unpack_scalar()
+            self._opt_unpack_scalar()
         elif self._type == MessageBundleType.VECTOR:
-            if _CODE_PATH_CUPY:
-                self._cupy_unpack_vector()
-            else:
-                self._opt_unpack_vector()
+            self._opt_unpack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} message unpack")
 
@@ -662,7 +605,7 @@ class MessageBundleGPU(MessageBundle):
         Buffer.push_to_cache(self._recv_buffer)
         self._recv_buffer = None
 
-        # # Push the streams back
+        # Push the streams back in the pool
         for cu_info in self._cu_kernel_args.values():
             _push_stream(cu_info.stream)
 
@@ -681,15 +624,12 @@ class MessageBundleGPU(MessageBundle):
     def _opt_unpack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
-            kernel_args = self._cu_kernel_args[x_info._id]
-
             # Use private stream
+            kernel_args = self._cu_kernel_args[x_info._id]
             self._use_stream(kernel_args.stream)
 
-            # Message size
-            message_size = _slices_length(x_info.recv_slices)
-
             # Launch kernel
+            message_size = _slices_length(x_info.recv_slices)
             blocks = 128
             grid_x = (message_size // blocks) + 1
             unpack_scalar_f64_kernel(
@@ -707,42 +647,22 @@ class MessageBundleGPU(MessageBundle):
             # Next message offset into recv buffer
             offset += message_size
 
-    def _cupy_unpack_vector(self):
-        offset = 0
-        for x_info, y_info in zip(self._x_infos, self._y_infos):
-            quantity_view = x_info.quantity.data[x_info.recv_slices]
-            message_size = _slices_length(x_info.recv_slices)
-            self._recv_buffer.assign_to(
-                quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
-                buffer_reshape=quantity_view.shape,
-            )
-            offset += message_size
-            quantity_view = y_info.quantity.data[y_info.recv_slices]
-            message_size = _slices_length(y_info.recv_slices)
-            self._recv_buffer.assign_to(
-                quantity_view,
-                buffer_slice=np.index_exp[offset : offset + message_size],
-                buffer_reshape=quantity_view.shape,
-            )
-            offset += message_size
-
     def _opt_unpack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
         offset = 0
         for x_info, y_info in zip(self._x_infos, self._y_infos):
-            cu_kernel_args = self._cu_kernel_args[x_info._id]
+            # We only have writte a f64 kernel
+            if x_info.quantity.metadata.dtype != np.float64:
+                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
             # Use private stream
+            cu_kernel_args = self._cu_kernel_args[x_info._id]
             self._use_stream(cu_kernel_args.stream)
 
             # Message sizes
             message_size_x = _slices_length(x_info.recv_slices)
             message_size_y = _slices_length(y_info.recv_slices)
             message_size = message_size_x + message_size_y
-
-            if x_info.quantity.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
             # Launch kernel
             blocks = 128
