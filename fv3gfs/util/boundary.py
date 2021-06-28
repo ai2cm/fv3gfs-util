@@ -35,7 +35,7 @@ class Boundary:
         """
         return self._view(quantity, n_points, interior=False)
 
-    def send_slice(self, quantity: Quantity, n_points: int) -> Tuple(slice):
+    def send_slice(self, quantity: Quantity, n_points: int) -> Tuple[slice]:
         """Return the index slices which shoud be sent at this boundary.
 
         Args:
@@ -47,7 +47,7 @@ class Boundary:
         """
         return self._slice(quantity, n_points, interior=True)
 
-    def recv_slice(self, quantity: Quantity, n_points: int) -> Tuple(slice):
+    def recv_slice(self, quantity: Quantity, n_points: int) -> Tuple[slice]:
         """Return the index slices which shoud be received at this boundary.
 
         Args:
@@ -59,7 +59,7 @@ class Boundary:
         """
         return self._slice(quantity, n_points, interior=False)
 
-    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple(slice):
+    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
         """Abstract function to be reimplemented by child class.
         
         Return:
@@ -89,7 +89,7 @@ class SimpleBoundary(Boundary):
         boundary_slice = self._slice(quantity, n_points, interior)
         return quantity.data[tuple(boundary_slice)]
 
-    def _slice(self, quantity: Quantity, n_points: int, interior: bool):
+    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
         return get_boundary_slice(
             quantity.dims,
             quantity.origin,

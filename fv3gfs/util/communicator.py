@@ -87,7 +87,7 @@ class HaloUpdateRequestMessage:
         self,
         send_requests: Iterable[AsyncRequest],
         recv_requests: Iterable[AsyncRequest],
-        messages: Iterable[MessageBundle],
+        messages: Iterable[Tuple[int, MessageBundle]],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.
@@ -116,9 +116,9 @@ class HaloUpdateRequestMessage:
             for recv_req in self._recv_requests:
                 recv_req.wait()
         with self._timer.clock("unpack"):
-            for message in self._messages:
+            for _to_rank, message in self._messages:
                 message.async_unpack()
-            for message in self._messages:
+            for _to_rank, message in self._messages:
                 message.finalize()
 
 
@@ -518,7 +518,7 @@ class CubedSphereCommunicator(Communicator):
         # - message dict index on rank of receiver
         # - queue for packing
         # - allocate internal message memory
-        messages: List[MessageBundle] = []
+        messages: List[Tuple[int, MessageBundle]] = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for quantity in quantities:
@@ -531,18 +531,24 @@ class CubedSphereCommunicator(Communicator):
         return self._Isend_Irecv_halos(messages, tag)
 
     def _lazy_get_messages(
-        self, messages: List[MessageBundle], boundary: Boundary, quantity: Quantity,
+        self,
+        messages: List[Tuple[int, MessageBundle]],
+        boundary: Boundary,
+        quantity: Quantity,
     ) -> MessageBundle:
-        to_rank_messages = [x for x in messages if x.to_rank == boundary.to_rank]
+        to_rank_messages = [x for x in messages if x[0] == boundary.to_rank]
         assert len(to_rank_messages) <= 1
         if len(to_rank_messages) == 0:
             messages.append(
-                MessageBundle.get_from_quantity_module(
-                    boundary.to_rank, self._maybe_force_cpu(quantity.np)
+                (
+                    boundary.to_rank,
+                    MessageBundle.get_from_quantity_module(
+                        self._maybe_force_cpu(quantity.np)
+                    ),
                 )
             )
-            to_rank_messages = [x for x in messages if x.to_rank == boundary.to_rank]
-        return to_rank_messages[0]
+            to_rank_messages = [x for x in messages if x[0] == boundary.to_rank]
+        return to_rank_messages[0][1]
 
     def _queue_scalar(
         self,
@@ -558,34 +564,32 @@ class CubedSphereCommunicator(Communicator):
             boundary.recv_slice(quantity, n_points),
         )
 
-    def _allocate_messages(self, messages: List[MessageBundle]):
-        for message in messages:
+    def _allocate_messages(self, messages: List[Tuple[int, MessageBundle]]):
+        for _to_rank, message in messages:
             message.allocate()
 
     def _Isend_Irecv_halos(
-        self, messages: List[MessageBundle], tag: int
+        self, messages: List[Tuple[int, MessageBundle]], tag: int
     ) -> HaloUpdateRequestMessage:
         with self.timer.clock("Irecv"):
             recv_requests = []
-            for message in messages:
+            for to_rank, message in messages:
                 recv_requests.append(
                     self.comm.Irecv(
-                        message.get_recv_buffer().array,
-                        source=message.to_rank,
-                        tag=tag,
+                        message.get_recv_buffer().array, source=to_rank, tag=tag,
                     )
                 )
         send_requests = []
-        for message in messages:
+        for _to_rank, message in messages:
             with self.timer.clock("pack"):
                 message.async_pack()
-        for message in messages:
+        for to_rank, message in messages:
             with self.timer.clock("pack"):
                 message.synchronize()
             with self.timer.clock("Isend"):
                 send_requests.append(
                     self.comm.Isend(
-                        message.get_send_buffer().array, dest=message.to_rank, tag=tag
+                        message.get_send_buffer().array, dest=to_rank, tag=tag
                     )
                 )
         return HaloUpdateRequestMessage(
@@ -652,7 +656,7 @@ class CubedSphereCommunicator(Communicator):
         # - message dict index on rank of receiver
         # - queue for packing
         # - allocate internal message memory
-        messages: List[MessageBundle] = []
+        messages: List[Tuple[int, MessageBundle]] = []
         with self.timer.clock("pack"):
             for boundary in self.boundaries.values():
                 for x_quantity, y_quantity in zip(x_quantities, y_quantities):
