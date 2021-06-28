@@ -1,4 +1,4 @@
-from typing import Tuple, Mapping, Optional, Sequence, cast, List
+from typing import Iterable, Tuple, Mapping, Optional, Sequence, cast, List
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
@@ -85,9 +85,9 @@ class HaloUpdateRequestMessage:
 
     def __init__(
         self,
-        send_requests: List[AsyncRequest],
-        recv_requests: List[AsyncRequest],
-        messages: List[MessageBundle],
+        send_requests: Iterable[AsyncRequest],
+        recv_requests: Iterable[AsyncRequest],
+        messages: Iterable[MessageBundle],
         timer: Optional[Timer] = None,
     ):
         """Build a halo request.

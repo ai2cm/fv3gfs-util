@@ -85,7 +85,7 @@ N_EMPTY_CALLS = {}
 
 
 @contextlib.contextmanager
-def module_count_calls_to_empty(module):
+def module_count_calls_to_ones(module):
     global N_EMPTY_CALLS
     N_EMPTY_CALLS[module.empty] = 0
 
@@ -110,7 +110,7 @@ def module_count_calls_to_empty(module):
 
 @pytest.mark.parametrize("backend", ["cupy", "gt4py_cupy"], indirect=True)
 def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
-    with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
+    with module_count_calls_to_ones(np), module_count_calls_to_ones(cp):
         shape = (10, 10, 79)
         dims = (fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM)
         data = cp.ones(shape, dtype=float)
@@ -132,7 +132,7 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
 
 @pytest.mark.parametrize("backend", ["cupy", "gt4py_cupy"], indirect=True)
 def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
-    with module_count_calls_to_empty(np), module_count_calls_to_empty(cp):
+    with module_count_calls_to_ones(np), module_count_calls_to_ones(cp):
         shape = (10, 10, 79)
         data = cp.empty(shape, dtype=float)
         quantity = fv3gfs.util.Quantity(
