@@ -1,4 +1,4 @@
-from typing import Iterable, Tuple, Mapping, Optional, Sequence, cast, List
+from typing import Iterable, Tuple, Mapping, Optional, Sequence, cast, List, Union
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
 from . import constants
@@ -81,7 +81,7 @@ class HaloUpdateRequest:
 
 
 class HaloUpdateRequestMessage:
-    """Asynchronous request object for halo updates."""
+    """Asynchronous request object for halo updates leveraging messages."""
 
     def __init__(
         self,
@@ -473,17 +473,14 @@ class CubedSphereCommunicator(Communicator):
         )
         return recv_quantity
 
-    def halo_update(self, quantity: Quantity, n_points: int):
-        self.halo_update_aggregate([quantity], n_points)
-
-    def halo_update_aggregate(self, quantities: List[Quantity], n_points: int):
-        """Perform a halo update on a quantity.
+    def halo_update(self, quantities: Union[Quantity, List[Quantity]], n_points: int):
+        """Perform a halo update on a quantity or quantities
 
         Args:
             quantity: the quantity to be updated
             n_points: how many halo points to update, starting from the interior
         """
-        req = self.start_halo_update_aggregate(quantities, n_points)
+        req = self.start_halo_update(quantities, n_points)
         req.wait()
 
     @staticmethod
@@ -493,12 +490,7 @@ class CubedSphereCommunicator(Communicator):
         device_synchronize()
 
     def start_halo_update(
-        self, quantity: Quantity, n_points: int
-    ) -> HaloUpdateRequestMessage:
-        return self.start_halo_update_aggregate([quantity], n_points)
-
-    def start_halo_update_aggregate(
-        self, quantities: List[Quantity], n_points: int
+        self, quantity: Union[Quantity, List[Quantity]], n_points: int
     ) -> HaloUpdateRequestMessage:
         """Start an asynchronous halo update on a quantity.
 
@@ -509,6 +501,11 @@ class CubedSphereCommunicator(Communicator):
         Returns:
             request: an asynchronous request object with a .wait() method
         """
+        if isinstance(quantity, Quantity):
+            quantities = [quantity]
+        else:
+            quantities = quantity
+
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         CubedSphereCommunicator._device_synchronize()
@@ -604,14 +601,12 @@ class CubedSphereCommunicator(Communicator):
         )
 
     def vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
+        self,
+        x_quantities: Union[Quantity, List[Quantity]],
+        y_quantities: Union[Quantity, List[Quantity]],
+        n_points: int,
     ):
-        self.vector_halo_update_aggregate([x_quantity], [y_quantity], n_points)
-
-    def vector_halo_update_aggregate(
-        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
-    ):
-        """Perform a halo update of a horizontal vector quantity.
+        """Perform a halo update of a horizontal vector quantity or quantities.
 
         Assumes the x and y dimension indices are the same between the two quantities.
 
@@ -620,20 +615,14 @@ class CubedSphereCommunicator(Communicator):
             y_quantity: the y-component quantity to be halo updated
             n_points: how many halo points to update, starting at the interior
         """
-        req = self.start_vector_halo_update_aggregate(
-            x_quantities, y_quantities, n_points
-        )
+        req = self.start_vector_halo_update(x_quantities, y_quantities, n_points)
         req.wait()
 
     def start_vector_halo_update(
-        self, x_quantity: Quantity, y_quantity: Quantity, n_points: int,
-    ) -> HaloUpdateRequestMessage:
-        return self.start_vector_halo_update_aggregate(
-            [x_quantity], [y_quantity], n_points
-        )
-
-    def start_vector_halo_update_aggregate(
-        self, x_quantities: List[Quantity], y_quantities: List[Quantity], n_points: int,
+        self,
+        x_quantity: Union[Quantity, List[Quantity]],
+        y_quantity: Union[Quantity, List[Quantity]],
+        n_points: int,
     ) -> HaloUpdateRequestMessage:
         """Start an asynchronous halo update of a horizontal vector quantity.
 
@@ -647,6 +636,15 @@ class CubedSphereCommunicator(Communicator):
         Returns:
             request: an asynchronous request object with a .wait() method
         """
+        if isinstance(x_quantity, Quantity):
+            x_quantities = [x_quantity]
+        else:
+            x_quantities = x_quantity
+        if isinstance(y_quantity, Quantity):
+            y_quantities = [y_quantity]
+        else:
+            y_quantities = y_quantity
+
         if n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         CubedSphereCommunicator._device_synchronize()
