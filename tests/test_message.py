@@ -186,7 +186,7 @@ def rotation(request):
 
 
 def test_message_allocate(quantity, n_halos):
-    message = MessageBundle.get_from_quantity_module(0, quantity.np)
+    message = MessageBundle.get_from_quantity_module(quantity.np)
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
         quantity.origin,
@@ -264,7 +264,7 @@ def _get_boundaries(quantity, n_halos):
 
 def test_message_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity: Quantity = copy.deepcopy(quantity)
-    message = MessageBundle.get_from_quantity_module(0, quantity.np)
+    message = MessageBundle.get_from_quantity_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(quantity, n_halos)
     N_edge_boundaries = {
@@ -330,7 +330,7 @@ def test_message_vector_pack_unpack(quantity, rotation, n_halos):
     original_quantity_y = copy.deepcopy(original_quantity_x)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
-    message = MessageBundle.get_from_quantity_module(0, quantity.np)
+    message = MessageBundle.get_from_quantity_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(x_quantity, n_halos)
     N_edge_boundaries = {
