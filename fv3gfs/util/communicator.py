@@ -532,7 +532,7 @@ class CubedSphereCommunicator(Communicator):
 
         # Issue asynchroneous transfer commands
         # Includes pre-network call buffer packing
-        return self._Isend_Irecv_halos(packed_buffer, tag)
+        return self._Isend_Irecv_halos(packed_buffers, tag)
 
     def _lazy_get_packed_buffer(
         self,
@@ -556,8 +556,8 @@ class CubedSphereCommunicator(Communicator):
             ]
         return to_rank_packed_buffer[0][1]
 
-    def _allocate_packed_buffer(self, packed_buffer: List[Tuple[int, PackedBuffer]]):
-        for _to_rank, packed_buffer in packed_buffer:
+    def _allocate_packed_buffer(self, packed_buffers: List[Tuple[int, PackedBuffer]]):
+        for _to_rank, packed_buffer in packed_buffers:
             packed_buffer.allocate()
 
     def _Isend_Irecv_halos(
@@ -669,7 +669,7 @@ class CubedSphereCommunicator(Communicator):
 
         # Issue asynchroneous transfer commands
         # Includes pre-network call buffer packing
-        return self._Isend_Irecv_halos(packed_buffer, tag)
+        return self._Isend_Irecv_halos(packed_buffers, tag)
 
     def start_synchronize_vector_interfaces(
         self, x_quantity: Quantity, y_quantity: Quantity

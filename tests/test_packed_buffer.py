@@ -17,7 +17,7 @@ from fv3gfs.util import (
     EAST,
     NORTHEAST,
 )
-from fv3gfs.util.packed import PackedBuffer
+from fv3gfs.util.packed_buffer import PackedBuffer
 from fv3gfs.util.buffer import Buffer
 from fv3gfs.util.rotate import rotate_scalar_data, rotate_vector_data
 import copy
@@ -206,12 +206,8 @@ def test_packed_buffer_allocate(quantity, n_halos):
         interior=False,
     )
 
-    packed_buffer.queue_scalar_data(
-        quantity, boundary_north, 0, boundary_north
-    )
-    packed_buffer.queue_scalar_data(
-        quantity, boundary_southwest, 0, boundary_southwest
-    )
+    packed_buffer.queue_scalar(quantity, boundary_north, 0, boundary_north)
+    packed_buffer.queue_scalar(quantity, boundary_southwest, 0, boundary_southwest)
     packed_buffer.allocate()
     assert len(packed_buffer.get_send_buffer().array.shape) == 1
     assert (
@@ -285,13 +281,13 @@ def test_packed_buffer_scalar_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    packed_buffer.queue_scalar_data(
+    packed_buffer.queue_scalar(
         quantity,
         N_edge_boundaries[rotation][0],
         rotation,
         N_edge_boundaries[rotation][1],
     )
-    packed_buffer.queue_scalar_data(
+    packed_buffer.queue_scalar(
         quantity,
         NE_corner_boundaries[rotation][0],
         rotation,
@@ -351,7 +347,7 @@ def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    packed_buffer.queue_vector_packed_buffer(
+    packed_buffer.queue_vector(
         x_quantity,
         N_edge_boundaries[rotation][0],
         y_quantity,
@@ -360,7 +356,7 @@ def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
         N_edge_boundaries[rotation][1],
         N_edge_boundaries[rotation][1],
     )
-    packed_buffer.queue_vector_packed_buffer(
+    packed_buffer.queue_vector(
         x_quantity,
         NE_corner_boundaries[rotation][0],
         y_quantity,

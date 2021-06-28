@@ -63,7 +63,7 @@ def _slices_length(slices: Tuple[slice]) -> int:
 
 
 @dataclass
-class ExchangeDataDescription:
+class _ExchangeDataDescription:
     """Description of a the data exchanged."""
 
     _id: UUID
@@ -73,7 +73,7 @@ class ExchangeDataDescription:
     recv_slices: Tuple[slice]
 
 
-class PackedBuffer(Enum):
+class _PackedBufferType(Enum):
     """Dimensionality of the data in the packed buffer."""
 
     UNKNOWN = 0
@@ -110,10 +110,8 @@ class PackedBuffer:
     _send_buffer: Optional[Buffer]
     _recv_buffer: Optional[Buffer]
 
-    _x_infos: List[ExchangeDataDescription]
-    _y_infos: List[ExchangeDataDescription]
-
-    _type: PackedBuffer = PackedBuffer.UNKNOWN
+    _x_infos: List[_ExchangeDataDescription]
+    _y_infos: List[_ExchangeDataDescription]
 
     def __init__(self, np_module: NumpyModule) -> None:
         """Init routine.
@@ -121,6 +119,7 @@ class PackedBuffer:
         Arguments:
             np_module: numpy-like module for allocation
         """
+        self._type = _PackedBufferType.UNKNOWN
         self._np_module = np_module
         self._x_infos = []
         self._y_infos = []
@@ -158,16 +157,19 @@ class PackedBuffer:
         recv_slice: Tuple[slice],
     ):
         """Add packed_buffer scalar packing information to the bundle."""
-        assert self._type == PackedBuffer.SCALAR or self._type == PackedBuffer.UNKNOWN
+        assert (
+            self._type == _PackedBufferType.SCALAR
+            or self._type == _PackedBufferType.UNKNOWN
+        )
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
                 "Buffer previously allocated are not longer correct."
                 "Make sure to queue all packed_buffer before calling allocate."
             )
 
-        self._type = PackedBuffer.SCALAR
+        self._type = _PackedBufferType.SCALAR
         self._x_infos.append(
-            ExchangeDataDescription(
+            _ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=quantity,
                 send_slices=send_slice,
@@ -187,15 +189,18 @@ class PackedBuffer:
         y_recv_slice: Tuple[slice],
     ):
         """Add packed_buffer vector packing information to the bundle."""
-        assert self._type == PackedBuffer.VECTOR or self._type == PackedBuffer.UNKNOWN
+        assert (
+            self._type == _PackedBufferType.VECTOR
+            or self._type == _PackedBufferType.UNKNOWN
+        )
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
                 "Buffer previously allocated are not longer correct."
                 "Make sure to queue all packed_buffer before calling allocate."
             )
-        self._type = PackedBuffer.VECTOR
+        self._type = _PackedBufferType.VECTOR
         self._x_infos.append(
-            ExchangeDataDescription(
+            _ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=x_quantity,
                 send_slices=x_send_slice,
@@ -204,7 +209,7 @@ class PackedBuffer:
             )
         )
         self._y_infos.append(
-            ExchangeDataDescription(
+            _ExchangeDataDescription(
                 _id=uuid1(),
                 quantity=y_quantity,
                 send_slices=y_send_slice,
@@ -240,7 +245,7 @@ class PackedBuffer:
         for x_info in self._x_infos:
             buffer_size += _slices_length(x_info.send_slices)
             dtype = x_info.quantity.metadata.dtype
-        if self._type is PackedBuffer.VECTOR:
+        if self._type is _PackedBufferType.VECTOR:
             for y_info in self._y_infos:
                 buffer_size += _slices_length(y_info.send_slices)
 
@@ -291,9 +296,9 @@ class PackedBufferCPU(PackedBuffer):
 
     def async_pack(self):
         # Unpack per type
-        if self._type == PackedBuffer.SCALAR:
+        if self._type == _PackedBufferType.SCALAR:
             self._pack_scalar()
-        elif self._type == PackedBuffer.VECTOR:
+        elif self._type == _PackedBufferType.VECTOR:
             self._pack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
@@ -350,9 +355,9 @@ class PackedBufferCPU(PackedBuffer):
 
     def async_unpack(self):
         # Unpack per type
-        if self._type == PackedBuffer.SCALAR:
+        if self._type == _PackedBufferType.SCALAR:
             self._unpack_scalar()
-        elif self._type == PackedBuffer.VECTOR:
+        elif self._type == _PackedBufferType.VECTOR:
             self._unpack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
@@ -456,7 +461,7 @@ class PackedBufferGPU(PackedBuffer):
 
     def _flatten_indices(
         self,
-        packed_buffer_info: ExchangeDataDescription,
+        packed_buffer_info: _ExchangeDataDescription,
         slices: Tuple[slice],
         rotate: bool,
     ) -> "cp.ndarray":
@@ -546,9 +551,9 @@ class PackedBufferGPU(PackedBuffer):
 
     def async_pack(self):
         # Unpack per type
-        if self._type == PackedBuffer.SCALAR:
+        if self._type == _PackedBufferType.SCALAR:
             self._opt_pack_scalar()
-        elif self._type == PackedBuffer.VECTOR:
+        elif self._type == _PackedBufferType.VECTOR:
             self._opt_pack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
@@ -626,9 +631,9 @@ class PackedBufferGPU(PackedBuffer):
 
     def async_unpack(self):
         # Unpack per type
-        if self._type == PackedBuffer.SCALAR:
+        if self._type == _PackedBufferType.SCALAR:
             self._opt_unpack_scalar()
-        elif self._type == PackedBuffer.VECTOR:
+        elif self._type == _PackedBufferType.VECTOR:
             self._opt_unpack_vector()
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
