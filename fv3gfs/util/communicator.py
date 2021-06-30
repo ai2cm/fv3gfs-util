@@ -9,6 +9,7 @@ from ._timing import Timer, NullTimer
 from .types import AsyncRequest, NumpyModule
 from .utils import device_synchronize
 from .packed_buffer import PackedBuffer
+from .halo_updater import HaloUpdater
 import logging
 import numpy as np
 
@@ -841,6 +842,36 @@ class CubedSphereCommunicator(Communicator):
         raise NotImplementedError(
             "finish_vector_halo_update has been removed, use .wait() on the request object "
             "returned by start_vector_halo_update"
+        )
+
+    def get_scalar_halo_updater(
+        self, quantities: Iterable[Quantity], n_halo_points: int
+    ):
+        return HaloUpdater.from_scalar_quantities(
+            self,
+            self._maybe_force_cpu(quantities[0].np),
+            quantities,
+            self.boundaries.values(),
+            self._get_halo_tag(),
+            n_halo_points,
+            self.timer,
+        )
+
+    def get_vector_halo_updater(
+        self,
+        quantities_x: Iterable[Quantity],
+        quantities_y: Iterable[Quantity],
+        n_halo_points: int,
+    ):
+        return HaloUpdater.from_vector_quantities(
+            self,
+            self._maybe_force_cpu(quantities_x[0].np),
+            quantities_x,
+            quantities_y,
+            self.boundaries.values(),
+            self._get_halo_tag(),
+            n_halo_points,
+            self.timer,
         )
 
 
