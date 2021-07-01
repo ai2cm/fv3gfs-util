@@ -117,12 +117,12 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
         quantity = fv3gfs.util.Quantity(
             data, dims=dims, units="m", origin=(3, 3, 1), extent=(3, 3, 1),
         )
-        req_list = []
+        halo_updater_list = []
         for communicator in gpu_communicators:
-            req = communicator.start_halo_update(quantity, 3)
-            req_list.append(req)
-        for req in req_list:
-            req.wait()
+            halo_updater = communicator.start_halo_update(quantity, 3)
+            halo_updater_list.append(halo_updater)
+        for halo_updater in halo_updater_list:
+            halo_updater.async_exchange_wait()
 
     # We expect no np calls and several cp calls
     global N_EMPTY_CALLS
@@ -142,12 +142,12 @@ def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
             origin=(3, 3, 0),
             extent=(3, 3, 0),
         )
-        req_list = []
+        halo_updater_list = []
         for communicator in cpu_communicators:
-            req = communicator.start_halo_update(quantity, 3)
-            req_list.append(req)
-        for req in req_list:
-            req.wait()
+            halo_updater = communicator.start_halo_update(quantity, 3)
+            halo_updater_list.append(halo_updater)
+        for halo_updater in halo_updater_list:
+            halo_updater.async_exchange_wait()
 
     # We expect several np calls and several cp calls
     global N_EMPTY_CALLS
