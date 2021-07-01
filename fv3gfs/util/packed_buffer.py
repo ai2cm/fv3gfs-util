@@ -71,6 +71,8 @@ class _ExchangeDataDescription:
     send_slices: Tuple[slice]
     send_clockwise_rotation: int
     recv_slices: Tuple[slice]
+    send_buffer_size: int
+    recv_buffer_size: int
 
 
 class _PackedBufferType(Enum):
@@ -175,6 +177,8 @@ class PackedBuffer:
                 send_slices=send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=recv_slice,
+                send_buffer_size=_slices_length(send_slice),
+                recv_buffer_size=_slices_length(recv_slice),
             )
         )
 
@@ -206,6 +210,8 @@ class PackedBuffer:
                 send_slices=x_send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=x_recv_slice,
+                send_buffer_size=_slices_length(x_send_slice),
+                recv_buffer_size=_slices_length(x_recv_slice),
             )
         )
         self._y_infos.append(
@@ -215,6 +221,8 @@ class PackedBuffer:
                 send_slices=y_send_slice,
                 send_clockwise_rotation=n_clockwise_rotation,
                 recv_slices=y_recv_slice,
+                send_buffer_size=_slices_length(y_send_slice),
+                recv_buffer_size=_slices_length(y_recv_slice),
             )
         )
 
@@ -566,29 +574,26 @@ class PackedBufferGPU(PackedBuffer):
             # Use private stream
             self._use_stream(cu_kernel_args.stream)
 
-            # Buffer size
-            packed_buffer_size = _slices_length(x_info.send_slices)
-
             if x_info.quantity.metadata.dtype != np.float64:
                 raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
             # Launch kernel
             blocks = 128
-            grid_x = (packed_buffer_size // blocks) + 1
+            grid_x = (x_info.send_buffer_size // blocks) + 1
             pack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
                     x_info.quantity.data[:],  # source_array
                     cu_kernel_args.x_send_indices,  # indices
-                    packed_buffer_size,  # nIndex
+                    x_info.send_buffer_size,  # nIndex
                     offset,
                     self._send_buffer.array,
                 ),
             )
 
             # Next packed_buffer offset into send buffer
-            offset += packed_buffer_size
+            offset += x_info.send_buffer_size
 
     def _opt_pack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -600,9 +605,7 @@ class PackedBufferGPU(PackedBuffer):
             self._use_stream(cu_kernel_args.stream)
 
             # Buffer sizes
-            packed_buffer_size_x = _slices_length(x_info.send_slices)
-            packed_buffer_size_y = _slices_length(y_info.send_slices)
-            packed_buffer_size = packed_buffer_size_x + packed_buffer_size_y
+            packed_buffer_size = x_info.send_buffer_size + y_info.send_buffer_size
 
             if x_info.quantity.metadata.dtype != np.float64:
                 raise RuntimeError(f"Kernel requires f64 given {np.float64}")
@@ -618,8 +621,8 @@ class PackedBufferGPU(PackedBuffer):
                     y_info.quantity.data[:],  # source_array_y
                     cu_kernel_args.x_send_indices,  # indices_x
                     cu_kernel_args.y_send_indices,  # indices_y
-                    packed_buffer_size_x,  # nIndex_x
-                    packed_buffer_size_y,  # nIndex_y
+                    x_info.send_buffer_size,  # nIndex_x
+                    y_info.send_buffer_size,  # nIndex_y
                     offset,
                     (-x_info.send_clockwise_rotation) % 4,  # rotation
                     self._send_buffer.array,
@@ -646,23 +649,22 @@ class PackedBufferGPU(PackedBuffer):
             self._use_stream(kernel_args.stream)
 
             # Launch kernel
-            packed_buffer_size = _slices_length(x_info.recv_slices)
             blocks = 128
-            grid_x = (packed_buffer_size // blocks) + 1
+            grid_x = (x_info.recv_buffer_size // blocks) + 1
             unpack_scalar_f64_kernel(
                 (blocks,),
                 (grid_x,),
                 (
                     self._recv_buffer.array,  # source_buffer
                     kernel_args.x_recv_indices,  # indices
-                    packed_buffer_size,  # nIndex
+                    x_info.recv_buffer_size,  # nIndex
                     offset,
                     x_info.quantity.data[:],  # destination_array
                 ),
             )
 
             # Next packed_buffer offset into recv buffer
-            offset += packed_buffer_size
+            offset += x_info.recv_buffer_size
 
     def _opt_unpack_vector(self):
         assert len(self._x_infos) == len(self._y_infos)
@@ -677,9 +679,7 @@ class PackedBufferGPU(PackedBuffer):
             self._use_stream(cu_kernel_args.stream)
 
             # Buffer sizes
-            packed_buffer_size_x = _slices_length(x_info.recv_slices)
-            packed_buffer_size_y = _slices_length(y_info.recv_slices)
-            packed_buffer_size = packed_buffer_size_x + packed_buffer_size_y
+            packed_buffer_size = x_info.recv_buffer_size + y_info.recv_buffer_size
 
             # Launch kernel
             blocks = 128
@@ -691,8 +691,8 @@ class PackedBufferGPU(PackedBuffer):
                     self._recv_buffer.array,
                     cu_kernel_args.x_recv_indices,  # indices_x
                     cu_kernel_args.y_recv_indices,  # indices_y
-                    packed_buffer_size_x,  # nIndex_x
-                    packed_buffer_size_y,  # nIndex_y
+                    x_info.recv_buffer_size,  # nIndex_x
+                    y_info.recv_buffer_size,  # nIndex_y
                     offset,
                     x_info.quantity.data[:],  # destination_array_x
                     y_info.quantity.data[:],  # destination_array_y
