@@ -55,10 +55,7 @@ class HaloUpdater:
         Args:
             comm: communicator to post network messages
             numpy_like_module: module implementing numpy API
-            quantities_x: quantities to exchange along the x axis.
-                          Length must match y quantities.
-            quantities_y: quantities to exchange along the y axis.
-                          Length must match x quantities.
+            quantities: data to exchange.
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
             n_halo_points: size of the halo to exchange.
