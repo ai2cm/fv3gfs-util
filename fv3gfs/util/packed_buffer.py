@@ -449,10 +449,7 @@ class PackedBufferGPU(PackedBuffer):
 
         # Flatten the index into an indices array
         with np.nditer(
-            arr_indices,
-            flags=["multi_index"],
-            op_flags=["writeonly"],
-            order="K",
+            arr_indices, flags=["multi_index"], op_flags=["writeonly"], order="K",
         ) as it:
             for array_value in it:
                 offset = sum(np.array(it.multi_index) * strides) // itemsize
