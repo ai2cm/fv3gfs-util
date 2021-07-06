@@ -10,6 +10,16 @@ if TYPE_CHECKING:
 
 
 class HaloUpdater:
+    """Exchange halo information between ranks.
+
+    The class is responsible for the entire exchange and uses the __init__
+    do precompute the maximum of information to have minimum overhead at runtime.
+
+    - from_scalar_quantities/from_vector_quantities are used to create an HaloUpdater
+      from a list of quantities and boundaries.
+    - blocking_exchange and async_exchange_start/wait trigger the halo exchange.
+    """
+
     def __init__(
         self,
         comm: "Communicator",
@@ -25,6 +35,7 @@ class HaloUpdater:
         self._send_requests: List[AsyncRequest] = []
 
     def __del__(self):
+        """Clean up all buffers on garbage collection"""
         for _to_rank, buffer in self._packed_buffers:
             buffer.finalize()
 
@@ -39,12 +50,30 @@ class HaloUpdater:
         n_halo_points: int,
         optional_timer: Optional[Timer] = None,
     ) -> "HaloUpdater":
+        """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
+        
+        Args:
+            comm: communicator to post network messages
+            numpy_like_module: module implementing numpy API
+            quantities_x: quantities to exchange along the x axis.
+                          Length must match y quantities.
+            quantities_y: quantities to exchange along the y axis.
+                          Length must match x quantities.
+            boundaries: informations on the exchange boundaries.
+            tag: network tag (to differentiate messaging) for this node.
+            n_halo_points: size of the halo to exchange.
+            optional_timer: timing of operations.
+        
+        Returns:
+            HaloUpdater ready to exchange data.
+        """
+
         timer = optional_timer if optional_timer is not None else NullTimer()
 
         packed_buffers: List[Tuple[int, PackedBuffer]] = []
         for boundary in boundaries:
             for quantity in quantities:
-                buffer = cls._lazy_get_packed_buffer(
+                buffer = cls._get_packed_buffer(
                     packed_buffers, numpy_like_module, boundary
                 )
                 buffer.queue_scalar(
@@ -71,12 +100,29 @@ class HaloUpdater:
         n_halo_points: int,
         optional_timer: Optional[Timer] = None,
     ) -> "HaloUpdater":
+        """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
+
+        Args:
+            comm: communicator to post network messages
+            numpy_like_module: module implementing numpy API
+            quantities_x: quantities to exchange along the x axis.
+                          Length must match y quantities.
+            quantities_y: quantities to exchange along the y axis.
+                          Length must match x quantities.
+            boundaries: informations on the exchange boundaries.
+            tag: network tag (to differentiate messaging) for this node.
+            n_halo_points: size of the halo to exchange.
+            optional_timer: timing of operations.
+        
+        Returns:
+            HaloUpdater ready to exchange data.
+        """
         timer = optional_timer if optional_timer is not None else NullTimer()
 
         packed_buffers: List[Tuple[int, PackedBuffer]] = []
         for boundary in boundaries:
             for quantity_x, quantity_y in zip(quantities_x, quantities_y):
-                buffer = cls._lazy_get_packed_buffer(
+                buffer = cls._get_packed_buffer(
                     packed_buffers, numpy_like_module, boundary
                 )
                 buffer.queue_vector(
@@ -94,14 +140,23 @@ class HaloUpdater:
 
         return cls(comm, tag, packed_buffers, timer)
 
-    # TODO SHARED CODE WITH COMMS
     @classmethod
-    def _lazy_get_packed_buffer(
+    def _get_packed_buffer(
         cls,
         packed_buffer: List[Tuple[int, PackedBuffer]],
         numpy_like_module: NumpyModule,
         boundary: Boundary,
     ) -> PackedBuffer:
+        """Returns the correct packed_buffer from the list create it first if need be.
+
+        Args:
+            packed_buffer: list of Tuple [target_rank_to_send_data, PackedBuffer]
+            numpy_like_module: module implementing numpy API
+            boundary: information on the exchange boundary
+
+        Returns:
+            Correct PackedBuffer for target rank
+        """
         to_rank_packed_buffer = [x for x in packed_buffer if x[0] == boundary.to_rank]
         assert len(to_rank_packed_buffer) <= 1
         if len(to_rank_packed_buffer) == 0:
@@ -117,10 +172,12 @@ class HaloUpdater:
         return to_rank_packed_buffer[0][1]
 
     def blocking_exchange(self):
+        """Exhange the data and blocks until finished."""
         self.async_exchange_start()
         self.async_exchange_wait()
 
     def async_exchange_start(self):
+        """Start data exchange."""
         self._comm._device_synchronize()
 
         # Post recv MPI order
@@ -155,6 +212,7 @@ class HaloUpdater:
                 )
 
     def async_exchange_wait(self):
+        """Finalize data exchange."""
         # Wait message to be exchange
         with self._timer.clock("wait"):
             for send_req in self._send_requests:
