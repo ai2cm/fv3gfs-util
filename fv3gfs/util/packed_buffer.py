@@ -372,12 +372,6 @@ class PackedBufferCPU(PackedBuffer):
 
         self._recv_buffer.finalize_memory_transfer()
 
-        # Pop the buffers back in the cache
-        Buffer.push_to_cache(self._send_buffer)
-        self._send_buffer = None
-        Buffer.push_to_cache(self._recv_buffer)
-        self._recv_buffer = None
-
     def _unpack_scalar(self):
         offset = 0
         for x_info in self._x_infos:
@@ -411,7 +405,11 @@ class PackedBufferCPU(PackedBuffer):
             offset += packed_buffer_size
 
     def finalize(self):
-        pass
+        # Pop the buffers back in the cache
+        Buffer.push_to_cache(self._send_buffer)
+        self._send_buffer = None
+        Buffer.push_to_cache(self._recv_buffer)
+        self._recv_buffer = None
 
 
 class PackedBufferGPU(PackedBuffer):
@@ -451,7 +449,10 @@ class PackedBufferGPU(PackedBuffer):
 
         # Flatten the index into an indices array
         with np.nditer(
-            arr_indices, flags=["multi_index"], op_flags=["writeonly"], order="K",
+            arr_indices,
+            flags=["multi_index"],
+            op_flags=["writeonly"],
+            order="K",
         ) as it:
             for array_value in it:
                 offset = sum(np.array(it.multi_index) * strides) // itemsize
