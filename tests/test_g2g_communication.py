@@ -122,7 +122,7 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
             halo_updater = communicator.start_halo_update(quantity, 3)
             halo_updater_list.append(halo_updater)
         for halo_updater in halo_updater_list:
-            halo_updater.async_exchange_wait()
+            halo_updater.wait()
 
     # We expect no np calls and several cp calls
     global N_EMPTY_CALLS
@@ -147,7 +147,7 @@ def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
             halo_updater = communicator.start_halo_update(quantity, 3)
             halo_updater_list.append(halo_updater)
         for halo_updater in halo_updater_list:
-            halo_updater.async_exchange_wait()
+            halo_updater.wait()
 
     # We expect several np calls and several cp calls
     global N_EMPTY_CALLS

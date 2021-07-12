@@ -310,7 +310,7 @@ def test_halo_update_timer(
         halo_updater = communicator.start_halo_update(quantity, n_points_update)
         halo_updater_list.append(halo_updater)
     for halo_updater in halo_updater_list:
-        halo_updater.async_exchange_wait()
+        halo_updater.wait()
     required_times_keys = ("pack", "unpack", "Isend", "Irecv", "wait")
     for communicator in communicator_list:
         with subtests.test(rank=communicator.rank):
@@ -348,7 +348,7 @@ def test_depth_halo_update(
             halo_updater = communicator.start_halo_update(quantity, n_points_update)
             halo_updater_list.append(halo_updater)
         for halo_updater in halo_updater_list:
-            halo_updater.async_exchange_wait()
+            halo_updater.wait()
         for rank, quantity in enumerate(depth_quantity_list):
             with subtests.test(rank=rank, quantity=quantity):
                 for dim, extent in ((y_dim, y_extent), (x_dim, x_extent)):
@@ -417,7 +417,7 @@ def test_zeros_halo_update(
             halo_udapter = communicator.start_halo_update(quantity, n_points_update)
             halo_udapter_list.append(halo_udapter)
         for halo_udapter in halo_udapter_list:
-            halo_udapter.async_exchange_wait()
+            halo_udapter.wait()
         for rank, quantity in enumerate(zeros_quantity_list):
             boundaries = boundary_dict[rank % ranks_per_tile]
             for boundary in boundaries:
@@ -465,7 +465,7 @@ def test_zeros_vector_halo_update(
                 )
             )
         for halo_updater in halo_updater_list:
-            halo_updater.async_exchange_wait()
+            halo_updater.wait()
         for rank, (y_quantity, x_quantity) in enumerate(zip(y_list, x_list)):
             boundaries = boundary_dict[rank % ranks_per_tile]
             for boundary in boundaries:
@@ -518,7 +518,7 @@ def test_vector_halo_update_timer(
             )
         )
     for halo_updater in halo_updater_list:
-        halo_updater.async_exchange_wait()
+        halo_updater.wait()
     required_times_keys = ("pack", "unpack", "Isend", "Irecv", "wait")
     for communicator in communicator_list:
         with subtests.test(rank=communicator.rank):

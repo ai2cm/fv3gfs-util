@@ -122,7 +122,7 @@ def test_correct_rank_layout(rank_quantity_list, communicator_list, subtests, nu
         halo_updater = communicator.start_halo_update(quantity, 1)
         halo_updater_list.append(halo_updater)
     for halo_updater in halo_updater_list:
-        halo_updater.async_exchange_wait()
+        halo_updater.wait()
     for rank, quantity in enumerate(rank_quantity_list):
         with subtests.test(rank=rank):
             if rank % 2 == 0:

@@ -1,3 +1,4 @@
+from fv3gfs.util.packed_buffer import HaloUpdateSpec
 from typing import Tuple, Mapping, Optional, Sequence, cast, List, Union
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
@@ -431,15 +432,20 @@ class CubedSphereCommunicator(Communicator):
         )
         return recv_quantity
 
-    def halo_update(self, quantities: Union[Quantity, List[Quantity]], n_points: int):
+    def halo_update(self, quantity: Union[Quantity, List[Quantity]], n_points: int):
         """Perform a halo update on a quantity or quantities
 
         Args:
             quantity: the quantity to be updated
             n_points: how many halo points to update, starting from the interior
         """
+        if isinstance(quantity, Quantity):
+            quantities = [quantity]
+        else:
+            quantities = quantity
+
         halo_updater = self.start_halo_update(quantities, n_points)
-        halo_updater.async_exchange_wait()
+        halo_updater.wait()
 
     @staticmethod
     def _device_synchronize():
@@ -464,8 +470,22 @@ class CubedSphereCommunicator(Communicator):
         else:
             quantities = quantity
 
-        halo_updater = self.get_scalar_halo_updater(quantities, n_points)
-        halo_updater.async_exchange_start()
+        specifications = []
+        for quantity in quantities:
+            specification = HaloUpdateSpec(
+                shape=quantity.data.shape,
+                strides=quantity.data.strides,
+                itemsize=quantity.data.itemsize,
+                origin=quantity.metadata.origin,
+                extent=quantity.metadata.extent,
+                dims=quantity.metadata.dims,
+                numpy_module=quantity.np,
+                dtype=quantity.metadata.dtype,
+            )
+            specifications.append(specification)
+
+        halo_updater = self.get_scalar_halo_updater(specifications, n_points)
+        halo_updater.start(quantities)
         return halo_updater
 
     def finish_halo_update(self, quantity: Quantity, n_points: int):
@@ -477,8 +497,8 @@ class CubedSphereCommunicator(Communicator):
 
     def vector_halo_update(
         self,
-        x_quantities: Union[Quantity, List[Quantity]],
-        y_quantities: Union[Quantity, List[Quantity]],
+        x_quantity: Union[Quantity, List[Quantity]],
+        y_quantity: Union[Quantity, List[Quantity]],
         n_points: int,
     ):
         """Perform a halo update of a horizontal vector quantity or quantities.
@@ -490,10 +510,19 @@ class CubedSphereCommunicator(Communicator):
             y_quantity: the y-component quantity to be halo updated
             n_points: how many halo points to update, starting at the interior
         """
+        if isinstance(x_quantity, Quantity):
+            x_quantities = [x_quantity]
+        else:
+            x_quantities = x_quantity
+        if isinstance(x_quantity, Quantity):
+            y_quantities = [y_quantity]
+        else:
+            y_quantities = y_quantity
+
         halo_updater = self.start_vector_halo_update(
             x_quantities, y_quantities, n_points
         )
-        halo_updater.async_exchange_wait()
+        halo_updater.wait()
 
     def start_vector_halo_update(
         self,
@@ -522,10 +551,36 @@ class CubedSphereCommunicator(Communicator):
         else:
             y_quantities = y_quantity
 
+        x_specifications = []
+        y_specifications = []
+        for x_quantity, y_quantity in zip(x_quantities, y_quantities):
+            x_specification = HaloUpdateSpec(
+                shape=x_quantity.data.shape,
+                strides=x_quantity.data.strides,
+                itemsize=x_quantity.data.itemsize,
+                origin=x_quantity.metadata.origin,
+                extent=x_quantity.metadata.extent,
+                dims=x_quantity.metadata.dims,
+                numpy_module=x_quantity.np,
+                dtype=x_quantity.metadata.dtype,
+            )
+            x_specifications.append(x_specification)
+            y_specification = HaloUpdateSpec(
+                shape=y_quantity.data.shape,
+                strides=y_quantity.data.strides,
+                itemsize=y_quantity.data.itemsize,
+                origin=y_quantity.metadata.origin,
+                extent=y_quantity.metadata.extent,
+                dims=y_quantity.metadata.dims,
+                numpy_module=y_quantity.np,
+                dtype=y_quantity.metadata.dtype,
+            )
+            y_specifications.append(y_specification)
+
         halo_updater = self.get_vector_halo_updater(
-            x_quantities, y_quantities, n_points
+            x_specifications, y_specifications, n_points
         )
-        halo_updater.async_exchange_start()
+        halo_updater.start(x_quantities, y_quantities)
         return halo_updater
 
     def start_synchronize_vector_interfaces(
@@ -700,13 +755,15 @@ class CubedSphereCommunicator(Communicator):
             "returned by start_vector_halo_update"
         )
 
-    def get_scalar_halo_updater(self, quantities: List[Quantity], n_halo_points: int):
+    def get_scalar_halo_updater(
+        self, specifications: List[HaloUpdateSpec], n_halo_points: int
+    ):
         if n_halo_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        return HaloUpdater.from_scalar_quantities(
+        return HaloUpdater.from_scalar_specifications(
             self,
-            self._maybe_force_cpu(quantities[0].np),
-            quantities,
+            self._maybe_force_cpu(specifications[0].numpy_module),
+            specifications,
             self.boundaries.values(),
             self._get_halo_tag(),
             n_halo_points,
@@ -715,17 +772,17 @@ class CubedSphereCommunicator(Communicator):
 
     def get_vector_halo_updater(
         self,
-        quantities_x: List[Quantity],
-        quantities_y: List[Quantity],
+        specifications_x: List[HaloUpdateSpec],
+        specifications_y: List[HaloUpdateSpec],
         n_halo_points: int,
     ):
         if n_halo_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
-        return HaloUpdater.from_vector_quantities(
+        return HaloUpdater.from_vector_specifications(
             self,
-            self._maybe_force_cpu(quantities_x[0].np),
-            quantities_x,
-            quantities_y,
+            self._maybe_force_cpu(specifications_x[0].numpy_module),
+            specifications_x,
+            specifications_y,
             self.boundaries.values(),
             self._get_halo_tag(),
             n_halo_points,

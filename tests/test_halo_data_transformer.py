@@ -17,7 +17,7 @@ from fv3gfs.util import (
     EAST,
     NORTHEAST,
 )
-from fv3gfs.util.packed_buffer import PackedBuffer
+from fv3gfs.util.halo_data_transformer import HaloDataTransformer, HaloUpdateSpec
 from fv3gfs.util.buffer import Buffer
 from fv3gfs.util.rotate import rotate_scalar_data, rotate_vector_data
 import copy
@@ -185,8 +185,8 @@ def rotation(request):
     return request.param
 
 
-def test_packed_buffer_allocate(quantity, n_halos):
-    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
+def test_data_transformer_allocate(quantity, n_halos):
+    data_transformer = HaloDataTransformer.get_from_numpy_module(quantity.np)
     boundary_north = _boundary_utils.get_boundary_slice(
         quantity.dims,
         quantity.origin,
@@ -206,22 +206,35 @@ def test_packed_buffer_allocate(quantity, n_halos):
         interior=False,
     )
 
-    packed_buffer.queue_scalar(quantity, boundary_north, 0, boundary_north)
-    packed_buffer.queue_scalar(quantity, boundary_southwest, 0, boundary_southwest)
-    packed_buffer.allocate()
-    assert len(packed_buffer.get_send_buffer().array.shape) == 1
+    specification = HaloUpdateSpec(
+        shape=quantity.data.shape,
+        strides=quantity.data.strides,
+        itemsize=quantity.data.itemsize,
+        origin=quantity.metadata.origin,
+        extent=quantity.metadata.extent,
+        dims=quantity.metadata.dims,
+        numpy_module=quantity.np,
+        dtype=quantity.metadata.dtype,
+    )
+
+    data_transformer.queue_scalar(specification, boundary_north, 0, boundary_north)
+    data_transformer.queue_scalar(
+        specification, boundary_southwest, 0, boundary_southwest
+    )
+    data_transformer.allocate()
+    assert len(data_transformer.get_send_buffer().array.shape) == 1
     assert (
-        packed_buffer.get_send_buffer().array.size
+        data_transformer.get_send_buffer().array.size
         == quantity.data[boundary_north].size + quantity.data[boundary_southwest].size
     )
-    assert len(packed_buffer.get_recv_buffer().array.shape) == 1
+    assert len(data_transformer.get_recv_buffer().array.shape) == 1
     assert (
-        packed_buffer.get_recv_buffer().array.size
+        data_transformer.get_recv_buffer().array.size
         == quantity.data[boundary_north].size + quantity.data[boundary_southwest].size
     )
     # clean up
-    Buffer.push_to_cache(packed_buffer._send_buffer)
-    Buffer.push_to_cache(packed_buffer._recv_buffer)
+    Buffer.push_to_cache(data_transformer._send_buffer)
+    Buffer.push_to_cache(data_transformer._recv_buffer)
 
 
 def _get_boundaries(quantity, n_halos):
@@ -262,9 +275,9 @@ def _get_boundaries(quantity, n_halos):
     return send_boundaries, recv_boundaries
 
 
-def test_packed_buffer_scalar_pack_unpack(quantity, rotation, n_halos):
+def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity: Quantity = copy.deepcopy(quantity)
-    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
+    data_transformer = HaloDataTransformer.get_from_numpy_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(quantity, n_halos)
     N_edge_boundaries = {
@@ -281,26 +294,39 @@ def test_packed_buffer_scalar_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    packed_buffer.queue_scalar(
-        quantity,
+    specification = HaloUpdateSpec(
+        shape=quantity.data.shape,
+        strides=quantity.data.strides,
+        itemsize=quantity.data.itemsize,
+        origin=quantity.metadata.origin,
+        extent=quantity.metadata.extent,
+        dims=quantity.metadata.dims,
+        numpy_module=quantity.np,
+        dtype=quantity.metadata.dtype,
+    )
+
+    data_transformer.queue_scalar(
+        specification,
         N_edge_boundaries[rotation][0],
         rotation,
         N_edge_boundaries[rotation][1],
     )
-    packed_buffer.queue_scalar(
-        quantity,
+    data_transformer.queue_scalar(
+        specification,
         NE_corner_boundaries[rotation][0],
         rotation,
         NE_corner_boundaries[rotation][1],
     )
 
-    packed_buffer.allocate()
-    packed_buffer.async_pack()
-    packed_buffer.synchronize()
+    data_transformer.allocate()
+    data_transformer.async_pack([quantity])
+    data_transformer.synchronize()
     # Simulate data transfer
-    packed_buffer.get_recv_buffer().assign_from(packed_buffer.get_send_buffer().array)
-    packed_buffer.async_unpack()
-    packed_buffer.finalize()
+    data_transformer.get_recv_buffer().assign_from(
+        data_transformer.get_send_buffer().array
+    )
+    data_transformer.async_unpack([quantity])
+    data_transformer.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -321,16 +347,16 @@ def test_packed_buffer_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
 
     assert (original_quantity.data == quantity.data).all()
-    assert packed_buffer._send_buffer is None
-    assert packed_buffer._recv_buffer is None
+    assert data_transformer._send_buffer is None
+    assert data_transformer._recv_buffer is None
 
 
-def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
+def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
     original_quantity_x = copy.deepcopy(quantity)
     original_quantity_y = copy.deepcopy(original_quantity_x)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
-    packed_buffer = PackedBuffer.get_from_quantity_module(quantity.np)
+    data_transformer = HaloDataTransformer.get_from_numpy_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(x_quantity, n_halos)
     N_edge_boundaries = {
@@ -347,31 +373,54 @@ def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
     }
 
-    packed_buffer.queue_vector(
-        x_quantity,
+    specification_x = HaloUpdateSpec(
+        shape=x_quantity.data.shape,
+        strides=x_quantity.data.strides,
+        itemsize=x_quantity.data.itemsize,
+        origin=x_quantity.metadata.origin,
+        extent=x_quantity.metadata.extent,
+        dims=x_quantity.metadata.dims,
+        numpy_module=x_quantity.np,
+        dtype=x_quantity.metadata.dtype,
+    )
+    specification_y = HaloUpdateSpec(
+        shape=y_quantity.data.shape,
+        strides=y_quantity.data.strides,
+        itemsize=y_quantity.data.itemsize,
+        origin=y_quantity.metadata.origin,
+        extent=y_quantity.metadata.extent,
+        dims=y_quantity.metadata.dims,
+        numpy_module=y_quantity.np,
+        dtype=y_quantity.metadata.dtype,
+    )
+
+    data_transformer.queue_vector(
+        specification_x,
+        specification_y,
         N_edge_boundaries[rotation][0],
-        y_quantity,
         N_edge_boundaries[rotation][0],
         rotation,
         N_edge_boundaries[rotation][1],
         N_edge_boundaries[rotation][1],
     )
-    packed_buffer.queue_vector(
-        x_quantity,
+    data_transformer.queue_vector(
+        specification_x,
+        specification_y,
         NE_corner_boundaries[rotation][0],
-        y_quantity,
         NE_corner_boundaries[rotation][0],
         rotation,
         NE_corner_boundaries[rotation][1],
         NE_corner_boundaries[rotation][1],
     )
-    packed_buffer.allocate()
-    packed_buffer.async_pack()
-    packed_buffer.synchronize()
+    data_transformer.allocate()
+    data_transformer.async_pack([x_quantity], [y_quantity])
+    data_transformer.synchronize()
     # Simulate data transfer
-    packed_buffer.get_recv_buffer().assign_from(packed_buffer.get_send_buffer().array)
-    packed_buffer.async_unpack()
-    packed_buffer.finalize()
+    data_transformer.get_recv_buffer().assign_from(
+        data_transformer.get_send_buffer().array
+    )
+    data_transformer.async_unpack([x_quantity], [y_quantity])
+    data_transformer.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -397,5 +446,5 @@ def test_packed_buffer_vector_pack_unpack(quantity, rotation, n_halos):
 
     assert (original_quantity_x.data == x_quantity.data).all()
     assert (original_quantity_y.data == y_quantity.data).all()
-    assert packed_buffer._send_buffer is None
-    assert packed_buffer._recv_buffer is None
+    assert data_transformer._send_buffer is None
+    assert data_transformer._recv_buffer is None

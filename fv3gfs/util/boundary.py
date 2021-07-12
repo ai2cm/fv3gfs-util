@@ -1,4 +1,5 @@
 import dataclasses
+from fv3gfs.util.packed_buffer import HaloUpdateSpec
 from .quantity import Quantity
 from ._boundary_utils import get_boundary_slice
 from typing import Tuple
@@ -35,7 +36,7 @@ class Boundary:
         """
         return self._view(quantity, n_points, interior=False)
 
-    def send_slice(self, quantity: Quantity, n_points: int) -> Tuple[slice]:
+    def send_slice(self, specification: HaloUpdateSpec, n_points: int) -> Tuple[slice]:
         """Return the index slices which shoud be sent at this boundary.
 
         Args:
@@ -45,9 +46,9 @@ class Boundary:
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice(quantity, n_points, interior=True)
+        return self._slice_from_spec(specification, n_points, interior=True)
 
-    def recv_slice(self, quantity: Quantity, n_points: int) -> Tuple[slice]:
+    def recv_slice(self, specification: HaloUpdateSpec, n_points: int) -> Tuple[slice]:
         """Return the index slices which should be received at this boundary.
 
         Args:
@@ -57,7 +58,17 @@ class Boundary:
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice(quantity, n_points, interior=False)
+        return self._slice_from_spec(specification, n_points, interior=False)
+
+    def _slice_from_spec(
+        self, specification: HaloUpdateSpec, n_points: int, interior: bool
+    ) -> Tuple[slice]:
+        """Abstract function to be reimplemented by child class.
+        
+        Return:
+            A tuple of slices (one per dimensions)
+        """
+        raise NotImplementedError()
 
     def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
         """Abstract function to be reimplemented by child class.
@@ -95,6 +106,19 @@ class SimpleBoundary(Boundary):
             quantity.origin,
             quantity.extent,
             quantity.data.shape,
+            self.boundary_type,
+            n_points,
+            interior,
+        )
+
+    def _slice_from_spec(
+        self, specification: HaloUpdateSpec, n_points: int, interior: bool
+    ) -> Tuple[slice]:
+        return get_boundary_slice(
+            specification.dims,
+            specification.origin,
+            specification.extent,
+            specification.shape,
             self.boundary_type,
             n_points,
             interior,
