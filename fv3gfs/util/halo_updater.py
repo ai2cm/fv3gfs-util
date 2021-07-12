@@ -36,8 +36,8 @@ class HaloUpdater:
         self._timer = timer
         self._recv_requests: List[AsyncRequest] = []
         self._send_requests: List[AsyncRequest] = []
-        self._inflight_x_quantities: List[Quantity] = None
-        self._inflight_y_quantities: List[Quantity] = None
+        self._inflight_x_quantities: Optional[List[Quantity]] = None
+        self._inflight_y_quantities: Optional[List[Quantity]] = None
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""

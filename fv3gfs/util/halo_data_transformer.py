@@ -26,9 +26,9 @@ class HaloUpdateSpec:
     strides: Tuple[int]
     itemsize: int
     shape: Tuple[int]
-    origin: Tuple[int]
-    extent: Tuple[int]
-    dims: Tuple[Any]
+    origin: Tuple[int, ...]
+    extent: Tuple[int, ...]
+    dims: Tuple[str, ...]
     numpy_module: NumpyModule
     dtype: Any
 
@@ -252,7 +252,7 @@ class HaloDataTransformer:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
         return self._recv_buffer
 
-    def get_send_buffer(self):
+    def get_send_buffer(self) -> Buffer:
         """Retrieve send buffer.
 
         WARNING: Only available _after_ `allocate` as been called.
@@ -341,9 +341,11 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
 
+        assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         self._send_buffer.finalize_memory_transfer()
 
     def _pack_scalar(self, quantities: List[Quantity]):
+        assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         offset = 0
         # TODO: check here
         for quantity in quantities:
@@ -367,6 +369,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
 
     def _pack_vector(self, quantities_x: List[Quantity], quantities_y: List[Quantity]):
         # TODO: check here
+        assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         assert len(quantities_y) == len(quantities_x)
         assert len(self._x_infos) == len(self._y_infos)
         offset = 0
@@ -410,9 +413,11 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
 
+        assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         self._recv_buffer.finalize_memory_transfer()
 
     def _unpack_scalar(self, quantities: List[Quantity]):
+        assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         # TODO: check here
         offset = 0
         for quantity in quantities:
@@ -429,6 +434,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
     def _unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
+        assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         # TODO: check here
         offset = 0
         for quantity_x, quantity_y in zip(quantities_x, quantities_y):
@@ -477,7 +483,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         self,
         key,
         shape,
-        slices: Tuple[int],
+        slices: Tuple[slice],
         dims,
         strides,
         itemsize: int,
@@ -512,38 +518,32 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         INDICES_GPU_CACHE[key] = arr_indices_gpu
 
     def _flatten_indices(
-        self,
-        packed_buffer_info: _ExchangeDataDescription,
-        slices: Tuple[slice],
-        rotate: bool,
+        self, info: _ExchangeDataDescription, slices: Tuple[slice], rotate: bool,
     ) -> "cp.ndarray":
         """Extract a flat array of indices for the send packed_buffer.
 
         Also take care of rotating the indices to account for axis orientation
         """
-        strides = packed_buffer_info.strides
-        itemsize = packed_buffer_info.itemsize
-        shape = packed_buffer_info.shape
         key = str(
             (
                 slices,
-                packed_buffer_info.send_clockwise_rotation,
-                shape,
-                strides,
-                itemsize,
+                info.send_clockwise_rotation,
+                info.specification.shape,
+                info.specification.strides,
+                info.specification.itemsize,
             )
         )
 
         if key not in INDICES_GPU_CACHE.keys():
             self._build_flatten_indices(
                 key,
-                packed_buffer_info.shape,
-                packed_buffer_info.dims,
-                strides,
-                itemsize,
+                info.specification.shape,
                 slices,
+                info.specification.dims,
+                info.specification.strides,
+                info.specification.itemsize,
                 rotate,
-                packed_buffer_info.send_clockwise_rotation,
+                info.send_clockwise_rotation,
             )
 
         # We don't return a copy since the indices are read-only in the algorithm
@@ -610,6 +610,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         if self._type == _HaloDataTransformerType.SCALAR:
             self._opt_pack_scalar(quantities_x)
         elif self._type == _HaloDataTransformerType.VECTOR:
+            assert quantities_y is not None
             self._opt_pack_vector(quantities_x, quantities_y)
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
@@ -617,6 +618,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _opt_pack_scalar(
         self, quantities: List[Quantity],
     ):
+        assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         offset = 0
         for x_info, quantity in zip(self._x_infos, quantities):
             cu_kernel_args = self._cu_kernel_args[x_info._id]
@@ -648,6 +650,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
+        assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         assert len(self._x_infos) == len(self._y_infos)
         offset = 0
         for x_info, y_info, quantity_x, quantity_y in zip(
@@ -695,11 +698,13 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         if self._type == _HaloDataTransformerType.SCALAR:
             self._opt_unpack_scalar(quantities_x)
         elif self._type == _HaloDataTransformerType.VECTOR:
+            assert quantities_y is not None
             self._opt_unpack_vector(quantities_x, quantities_y)
         else:
             raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
 
     def _opt_unpack_scalar(self, quantities: List[Quantity]):
+        assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         offset = 0
         for x_info, quantity in zip(self._x_infos, quantities):
             # Use private stream
@@ -727,6 +732,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _opt_unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
+        assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         assert len(self._x_infos) == len(self._y_infos)
         offset = 0
         for x_info, y_info, quantity_x, quantity_y in zip(

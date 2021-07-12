@@ -1,4 +1,4 @@
-from fv3gfs.util.packed_buffer import HaloUpdateSpec
+from .halo_data_transformer import HaloUpdateSpec
 from typing import Tuple, Mapping, Optional, Sequence, cast, List, Union
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
@@ -97,6 +97,12 @@ class Communicator:
         if self._force_cpu:
             return np
         return module
+
+    @staticmethod
+    def _device_synchronize():
+        """Wait for all work that could be in-flight to finish."""
+        # this is a method so we can profile it separately from other device syncs
+        device_synchronize()
 
     def _Scatter(self, numpy_module, sendbuf, recvbuf, **kwargs):
         with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
@@ -447,12 +453,6 @@ class CubedSphereCommunicator(Communicator):
         halo_updater = self.start_halo_update(quantities, n_points)
         halo_updater.wait()
 
-    @staticmethod
-    def _device_synchronize():
-        """Wait for all work that could be in-flight to finish."""
-        # this is a method so we can profile it separately from other device syncs
-        device_synchronize()
-
     def start_halo_update(
         self, quantity: Union[Quantity, List[Quantity]], n_points: int
     ) -> HaloUpdater:
@@ -514,7 +514,7 @@ class CubedSphereCommunicator(Communicator):
             x_quantities = [x_quantity]
         else:
             x_quantities = x_quantity
-        if isinstance(x_quantity, Quantity):
+        if isinstance(y_quantity, Quantity):
             y_quantities = [y_quantity]
         else:
             y_quantities = y_quantity
