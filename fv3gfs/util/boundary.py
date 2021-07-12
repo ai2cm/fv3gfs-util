@@ -1,5 +1,5 @@
 import dataclasses
-from fv3gfs.util.packed_buffer import HaloUpdateSpec
+from fv3gfs.util.halo_data_transformer import HaloUpdateSpec
 from .quantity import Quantity
 from ._boundary_utils import get_boundary_slice
 from typing import Tuple
