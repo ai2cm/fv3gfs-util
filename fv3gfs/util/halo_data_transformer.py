@@ -111,8 +111,9 @@ class HaloDataTransformer:
     Order of operations:
     - get HaloDataTransformer via get_from_numpy_module
     (user should re-use the same if it goes to the same destination)
-    - queue N packed_buffers via queue_scalar & queue_vector (can't mix and match scalar & vector)
-    - allocate (WARNING: do not queue after allocation!)
+    - add N transformation with the proper halo specification via add_scalar_specification or
+     add_vector_specification (can't mix and match scalar & vector)
+    - compile the transformer via compile()
     [From here get_recv_buffer() is valid]
     - async_pack
     - synchronize
@@ -155,7 +156,7 @@ class HaloDataTransformer:
         """Construct a module from a numpy-like module.
 
         Arguments:
-            np_module: numpy-like module to determin child packed_buffer type.
+            np_module: numpy-like module to determin child transformer type.
 
         Return: an initialized packed buffer.
         """
@@ -168,22 +169,22 @@ class HaloDataTransformer:
             f"Quantity module {np_module} has no HaloDataTransformer implemented"
         )
 
-    def queue_scalar(
+    def add_scalar_specification(
         self,
         specification: HaloUpdateSpec,
         send_slice: Tuple[slice],
         n_clockwise_rotation: int,
         recv_slice: Tuple[slice],
     ):
-        """Add packed_buffer scalar packing information to the bundle."""
+        """Add memory specification (scalar)."""
         assert (
             self._type == _HaloDataTransformerType.SCALAR
             or self._type == _HaloDataTransformerType.UNKNOWN
         )
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
-                "Buffer previously allocated are not longer correct."
-                "Make sure to queue all packed_buffer before calling allocate."
+                "This transformer has already been compiled"
+                "You can only compile one specification per Transformer."
             )
 
         self._type = _HaloDataTransformerType.SCALAR
@@ -199,7 +200,7 @@ class HaloDataTransformer:
             )
         )
 
-    def queue_vector(
+    def add_vector_specification(
         self,
         specification_x: HaloUpdateSpec,
         specification_y: HaloUpdateSpec,
@@ -209,15 +210,15 @@ class HaloDataTransformer:
         x_recv_slice: Tuple[slice],
         y_recv_slice: Tuple[slice],
     ):
-        """Add packed_buffer vector packing information to the bundle."""
+        """Add memory specification (vector)."""
         assert (
             self._type == _HaloDataTransformerType.VECTOR
             or self._type == _HaloDataTransformerType.UNKNOWN
         )
         if self._recv_buffer is not None and self._send_buffer is not None:
             raise RuntimeError(
-                "Buffer previously allocated are not longer correct."
-                "Make sure to queue all packed_buffer before calling allocate."
+                "This transformer has already been compiled"
+                "You can only compile one specification per Transformer."
             )
         self._type = _HaloDataTransformerType.VECTOR
         self._x_infos.append(
@@ -246,7 +247,7 @@ class HaloDataTransformer:
     def get_recv_buffer(self) -> Buffer:
         """Retrieve receive buffer.
 
-        WARNING: Only available _after_ `allocate` as been called.
+        WARNING: Only available _after_ `add_*` as been called.
         """
         if self._recv_buffer is None:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
@@ -255,13 +256,13 @@ class HaloDataTransformer:
     def get_send_buffer(self) -> Buffer:
         """Retrieve send buffer.
 
-        WARNING: Only available _after_ `allocate` as been called.
+        WARNING: Only available _after_ `add_*` as been called.
         """
         if self._send_buffer is None:
             raise RuntimeError("Send buffer can't be retrieved before allocate()")
         return self._send_buffer
 
-    def allocate(self):
+    def compile(self):
         """Allocate contiguous memory buffers from description queued."""
 
         # Compute required size
@@ -291,7 +292,7 @@ class HaloDataTransformer:
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
     ):
-        """Pack all queued packed_buffers into a single send Buffer.
+        """Pack all given quantities into a single send Buffer.
 
         Implementation should guarantee the send Buffer is ready for MPI communication.
         The send Buffer is held by this class."""
@@ -302,7 +303,7 @@ class HaloDataTransformer:
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
     ):
-        """Unpack the buffer into destination arrays.
+        """Unpack the buffer into destination quantities.
 
         Implementation DOESN'T HAVE TO guarantee transfer is done."""
         raise NotImplementedError()
@@ -339,7 +340,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             assert quantities_y is not None
             self._pack_vector(quantities_x, quantities_y)
         else:
-            raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
+            raise RuntimeError(f"Unimplemented {self._type} pack")
 
         assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         self._send_buffer.finalize_memory_transfer()
@@ -350,7 +351,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         # TODO: check here
         for quantity in quantities:
             for x_info in self._x_infos:
-                packed_buffer_size = _slices_length(x_info.send_slices)
+                data_size = _slices_length(x_info.send_slices)
                 # sending data across the boundary will rotate the data
                 # n_clockwise_rotations times, due to the difference in axis orientation.\
                 # Thus we rotate that number of times counterclockwise before sending,
@@ -363,9 +364,9 @@ class HaloDataTransformerCPU(HaloDataTransformer):
                 )
                 self._send_buffer.assign_from(
                     flatten(source_view),
-                    buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
+                    buffer_slice=np.index_exp[offset : offset + data_size],
                 )
-                offset += packed_buffer_size
+                offset += data_size
 
     def _pack_vector(self, quantities_x: List[Quantity], quantities_y: List[Quantity]):
         # TODO: check here
@@ -387,7 +388,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
                     quantity_x.np,
                 )
 
-                # Pack X/Y packed_buffers in the buffer
+                # Pack X/Y data slices in the buffer
                 self._send_buffer.assign_from(
                     flatten(x_view),
                     buffer_slice=np.index_exp[offset : offset + x_view.size],
@@ -411,7 +412,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             assert quantities_y is not None
             self._unpack_vector(quantities_x, quantities_y)
         else:
-            raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
+            raise RuntimeError(f"Unimplemented {self._type} unpack")
 
         assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         self._recv_buffer.finalize_memory_transfer()
@@ -423,13 +424,13 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         for quantity in quantities:
             for x_info in self._x_infos:
                 quantity_view = quantity.data[x_info.recv_slices]
-                packed_buffer_size = _slices_length(x_info.recv_slices)
+                data_size = _slices_length(x_info.recv_slices)
                 self._recv_buffer.assign_to(
                     quantity_view,
-                    buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
+                    buffer_slice=np.index_exp[offset : offset + data_size],
                     buffer_reshape=quantity_view.shape,
                 )
-                offset += packed_buffer_size
+                offset += data_size
 
     def _unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
@@ -440,21 +441,21 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         for quantity_x, quantity_y in zip(quantities_x, quantities_y):
             for x_info, y_info in zip(self._x_infos, self._y_infos):
                 quantity_view = quantity_x.data[x_info.recv_slices]
-                packed_buffer_size = _slices_length(x_info.recv_slices)
+                data_size = _slices_length(x_info.recv_slices)
                 self._recv_buffer.assign_to(
                     quantity_view,
-                    buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
+                    buffer_slice=np.index_exp[offset : offset + data_size],
                     buffer_reshape=quantity_view.shape,
                 )
-                offset += packed_buffer_size
+                offset += data_size
                 quantity_view = quantity_y.data[y_info.recv_slices]
-                packed_buffer_size = _slices_length(y_info.recv_slices)
+                data_size = _slices_length(y_info.recv_slices)
                 self._recv_buffer.assign_to(
                     quantity_view,
-                    buffer_slice=np.index_exp[offset : offset + packed_buffer_size],
+                    buffer_slice=np.index_exp[offset : offset + data_size],
                     buffer_reshape=quantity_view.shape,
                 )
-                offset += packed_buffer_size
+                offset += data_size
 
     def finalize(self):
         # Pop the buffers back in the cache
@@ -520,7 +521,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _flatten_indices(
         self, info: _ExchangeDataDescription, slices: Tuple[slice], rotate: bool,
     ) -> "cp.ndarray":
-        """Extract a flat array of indices for the send packed_buffer.
+        """Extract a flat array of indices for this send operation.
 
         Also take care of rotating the indices to account for axis orientation
         """
@@ -549,9 +550,9 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         # We don't return a copy since the indices are read-only in the algorithm
         return INDICES_GPU_CACHE[key]
 
-    def allocate(self):
+    def compile(self):
         # Super to get buffer allocation
-        super().allocate()
+        super().compile()
         # Allocate the streams & build the indices arrays
         if len(self._y_infos) == 0:
             for x_info in self._x_infos:
@@ -613,81 +614,82 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             assert quantities_y is not None
             self._opt_pack_vector(quantities_x, quantities_y)
         else:
-            raise RuntimeError(f"Unimplemented {self._type} packed_buffer pack")
+            raise RuntimeError(f"Unimplemented {self._type} pack")
 
     def _opt_pack_scalar(
         self, quantities: List[Quantity],
     ):
         assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         offset = 0
-        for x_info, quantity in zip(self._x_infos, quantities):
-            cu_kernel_args = self._cu_kernel_args[x_info._id]
+        for quantity in quantities:
+            for x_info in self._x_infos:
+                cu_kernel_args = self._cu_kernel_args[x_info._id]
 
-            # Use private stream
-            self._use_stream(cu_kernel_args.stream)
+                # Use private stream
+                self._use_stream(cu_kernel_args.stream)
 
-            if quantity.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+                if quantity.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (x_info.send_buffer_size // blocks) + 1
-            pack_scalar_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    quantity.data[:],  # source_array
-                    cu_kernel_args.x_send_indices,  # indices
-                    x_info.send_buffer_size,  # nIndex
-                    offset,
-                    self._send_buffer.array,
-                ),
-            )
+                # Launch kernel
+                blocks = 128
+                grid_x = (x_info.send_buffer_size // blocks) + 1
+                pack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        quantity.data[:],  # source_array
+                        cu_kernel_args.x_send_indices,  # indices
+                        x_info.send_buffer_size,  # nIndex
+                        offset,
+                        self._send_buffer.array,
+                    ),
+                )
 
-            # Next packed_buffer offset into send buffer
-            offset += x_info.send_buffer_size
+                # Next transformer offset into send buffer
+                offset += x_info.send_buffer_size
 
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
         assert isinstance(self._send_buffer, Buffer)  # e.g. allocate happened
         assert len(self._x_infos) == len(self._y_infos)
+        assert len(quantities_x) == len(quantities_y)
         offset = 0
-        for x_info, y_info, quantity_x, quantity_y in zip(
-            self._x_infos, self._y_infos, quantities_x, quantities_y
-        ):
-            cu_kernel_args = self._cu_kernel_args[x_info._id]
+        for quantity_x, quantity_y in zip(quantities_x, quantities_y):
+            for x_info, y_info, in zip(self._x_infos, self._y_infos):
+                cu_kernel_args = self._cu_kernel_args[x_info._id]
 
-            # Use private stream
-            self._use_stream(cu_kernel_args.stream)
+                # Use private stream
+                self._use_stream(cu_kernel_args.stream)
 
-            # Buffer sizes
-            packed_buffer_size = x_info.send_buffer_size + y_info.send_buffer_size
+                # Buffer sizes
+                transformer_size = x_info.send_buffer_size + y_info.send_buffer_size
 
-            if quantity_x.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+                if quantity_x.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (packed_buffer_size // blocks) + 1
-            pack_vector_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    quantity_x.data[:],  # source_array_x
-                    quantity_y.data[:],  # source_array_y
-                    cu_kernel_args.x_send_indices,  # indices_x
-                    cu_kernel_args.y_send_indices,  # indices_y
-                    x_info.send_buffer_size,  # nIndex_x
-                    y_info.send_buffer_size,  # nIndex_y
-                    offset,
-                    (-x_info.send_clockwise_rotation) % 4,  # rotation
-                    self._send_buffer.array,
-                ),
-            )
+                # Launch kernel
+                blocks = 128
+                grid_x = (transformer_size // blocks) + 1
+                pack_vector_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        quantity_x.data[:],  # source_array_x
+                        quantity_y.data[:],  # source_array_y
+                        cu_kernel_args.x_send_indices,  # indices_x
+                        cu_kernel_args.y_send_indices,  # indices_y
+                        x_info.send_buffer_size,  # nIndex_x
+                        y_info.send_buffer_size,  # nIndex_y
+                        offset,
+                        (-x_info.send_clockwise_rotation) % 4,  # rotation
+                        self._send_buffer.array,
+                    ),
+                )
 
-            # Next packed_buffer offset into send buffer
-            offset += packed_buffer_size
+                # Next transformer offset into send buffer
+                offset += transformer_size
 
     def async_unpack(
         self,
@@ -701,74 +703,75 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             assert quantities_y is not None
             self._opt_unpack_vector(quantities_x, quantities_y)
         else:
-            raise RuntimeError(f"Unimplemented {self._type} packed_buffer unpack")
+            raise RuntimeError(f"Unimplemented {self._type} unpack")
 
     def _opt_unpack_scalar(self, quantities: List[Quantity]):
         assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         offset = 0
-        for x_info, quantity in zip(self._x_infos, quantities):
-            # Use private stream
-            kernel_args = self._cu_kernel_args[x_info._id]
-            self._use_stream(kernel_args.stream)
+        for quantity in quantities:
+            for x_info in self._x_infos:
+                # Use private stream
+                kernel_args = self._cu_kernel_args[x_info._id]
+                self._use_stream(kernel_args.stream)
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (x_info.recv_buffer_size // blocks) + 1
-            unpack_scalar_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    self._recv_buffer.array,  # source_buffer
-                    kernel_args.x_recv_indices,  # indices
-                    x_info.recv_buffer_size,  # nIndex
-                    offset,
-                    quantity.data[:],  # destination_array
-                ),
-            )
+                # Launch kernel
+                blocks = 128
+                grid_x = (x_info.recv_buffer_size // blocks) + 1
+                unpack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        self._recv_buffer.array,  # source_buffer
+                        kernel_args.x_recv_indices,  # indices
+                        x_info.recv_buffer_size,  # nIndex
+                        offset,
+                        quantity.data[:],  # destination_array
+                    ),
+                )
 
-            # Next packed_buffer offset into recv buffer
-            offset += x_info.recv_buffer_size
+                # Next transformer offset into recv buffer
+                offset += x_info.recv_buffer_size
 
     def _opt_unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
         assert isinstance(self._recv_buffer, Buffer)  # e.g. allocate happened
         assert len(self._x_infos) == len(self._y_infos)
+        assert len(quantities_x) == len(quantities_y)
         offset = 0
-        for x_info, y_info, quantity_x, quantity_y in zip(
-            self._x_infos, self._y_infos, quantities_x, quantities_y
-        ):
-            # We only have writte a f64 kernel
-            if quantity_x.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+        for quantity_x, quantity_y in zip(quantities_x, quantities_y):
+            for x_info, y_info, in zip(self._x_infos, self._y_infos):
+                # We only have writte a f64 kernel
+                if quantity_x.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            # Use private stream
-            cu_kernel_args = self._cu_kernel_args[x_info._id]
-            self._use_stream(cu_kernel_args.stream)
+                # Use private stream
+                cu_kernel_args = self._cu_kernel_args[x_info._id]
+                self._use_stream(cu_kernel_args.stream)
 
-            # Buffer sizes
-            packed_buffer_size = x_info.recv_buffer_size + y_info.recv_buffer_size
+                # Buffer sizes
+                transformer_size = x_info.recv_buffer_size + y_info.recv_buffer_size
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (packed_buffer_size // blocks) + 1
-            unpack_vector_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    self._recv_buffer.array,
-                    cu_kernel_args.x_recv_indices,  # indices_x
-                    cu_kernel_args.y_recv_indices,  # indices_y
-                    x_info.recv_buffer_size,  # nIndex_x
-                    y_info.recv_buffer_size,  # nIndex_y
-                    offset,
-                    quantity_x.data[:],  # destination_array_x
-                    quantity_y.data[:],  # destination_array_y
-                ),
-            )
+                # Launch kernel
+                blocks = 128
+                grid_x = (transformer_size // blocks) + 1
+                unpack_vector_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        self._recv_buffer.array,
+                        cu_kernel_args.x_recv_indices,  # indices_x
+                        cu_kernel_args.y_recv_indices,  # indices_y
+                        x_info.recv_buffer_size,  # nIndex_x
+                        y_info.recv_buffer_size,  # nIndex_y
+                        offset,
+                        quantity_x.data[:],  # destination_array_x
+                        quantity_y.data[:],  # destination_array_y
+                    ),
+                )
 
-            # Next packed_buffer offset into send buffer
-            offset += packed_buffer_size
+                # Next transformer offset into send buffer
+                offset += transformer_size
 
     def finalize(self):
         # Synchronize all work

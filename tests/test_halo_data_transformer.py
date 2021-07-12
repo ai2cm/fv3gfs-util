@@ -217,11 +217,13 @@ def test_data_transformer_allocate(quantity, n_halos):
         dtype=quantity.metadata.dtype,
     )
 
-    data_transformer.queue_scalar(specification, boundary_north, 0, boundary_north)
-    data_transformer.queue_scalar(
+    data_transformer.add_scalar_specification(
+        specification, boundary_north, 0, boundary_north
+    )
+    data_transformer.add_scalar_specification(
         specification, boundary_southwest, 0, boundary_southwest
     )
-    data_transformer.allocate()
+    data_transformer.compile()
     assert len(data_transformer.get_send_buffer().array.shape) == 1
     assert (
         data_transformer.get_send_buffer().array.size
@@ -305,20 +307,20 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
         dtype=quantity.metadata.dtype,
     )
 
-    data_transformer.queue_scalar(
+    data_transformer.add_scalar_specification(
         specification,
         N_edge_boundaries[rotation][0],
         rotation,
         N_edge_boundaries[rotation][1],
     )
-    data_transformer.queue_scalar(
+    data_transformer.add_scalar_specification(
         specification,
         NE_corner_boundaries[rotation][0],
         rotation,
         NE_corner_boundaries[rotation][1],
     )
 
-    data_transformer.allocate()
+    data_transformer.compile()
     data_transformer.async_pack([quantity])
     data_transformer.synchronize()
     # Simulate data transfer
@@ -394,7 +396,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         dtype=y_quantity.metadata.dtype,
     )
 
-    data_transformer.queue_vector(
+    data_transformer.add_vector_specification(
         specification_x,
         specification_y,
         N_edge_boundaries[rotation][0],
@@ -403,7 +405,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         N_edge_boundaries[rotation][1],
         N_edge_boundaries[rotation][1],
     )
-    data_transformer.queue_vector(
+    data_transformer.add_vector_specification(
         specification_x,
         specification_y,
         NE_corner_boundaries[rotation][0],
@@ -412,7 +414,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         NE_corner_boundaries[rotation][1],
         NE_corner_boundaries[rotation][1],
     )
-    data_transformer.allocate()
+    data_transformer.compile()
     data_transformer.async_pack([x_quantity], [y_quantity])
     data_transformer.synchronize()
     # Simulate data transfer

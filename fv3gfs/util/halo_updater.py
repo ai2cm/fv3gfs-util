@@ -80,7 +80,7 @@ class HaloUpdater:
                 buffer = cls._get_packed_buffer(
                     packed_buffers, numpy_like_module, boundary
                 )
-                buffer.queue_scalar(
+                buffer.add_scalar_specification(
                     specification,
                     boundary.send_slice(specification, n_halo_points),
                     boundary.n_clockwise_rotations,
@@ -88,7 +88,7 @@ class HaloUpdater:
                 )
 
         for _to_rank, buffer in packed_buffers:
-            buffer.allocate()
+            buffer.compile()
 
         return cls(comm, tag, packed_buffers, timer)
 
@@ -131,7 +131,7 @@ class HaloUpdater:
                 buffer = cls._get_packed_buffer(
                     packed_buffers, numpy_like_module, boundary
                 )
-                buffer.queue_vector(
+                buffer.add_vector_specification(
                     specification_x,
                     specification_y,
                     boundary.send_slice(specification_x, n_halo_points),
@@ -142,7 +142,7 @@ class HaloUpdater:
                 )
 
         for _to_rank, buffer in packed_buffers:
-            buffer.allocate()
+            buffer.compile()
 
         return cls(comm, tag, packed_buffers, timer)
 
