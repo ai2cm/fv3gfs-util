@@ -30,6 +30,7 @@ class HaloUpdater:
         tag: int,
         transformers: Dict[int, HaloDataTransformer],
         timer: Timer,
+        finalize_on_wait: bool,
     ):
         self._comm = comm
         self._tag = tag
@@ -37,8 +38,9 @@ class HaloUpdater:
         self._timer = timer
         self._recv_requests: List[AsyncRequest] = []
         self._send_requests: List[AsyncRequest] = []
-        self._inflight_x_quantities: Optional[Tuple[Quantity]] = None
-        self._inflight_y_quantities: Optional[Tuple[Quantity]] = None
+        self._inflight_x_quantities: Optional[Tuple[Quantity, ...]] = None
+        self._inflight_y_quantities: Optional[Tuple[Quantity, ...]] = None
+        self._finalize_on_wait = finalize_on_wait
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""
@@ -61,6 +63,7 @@ class HaloUpdater:
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
+        finalize_on_wait: bool = False,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
         
@@ -96,7 +99,7 @@ class HaloUpdater:
                 numpy_like_module, exchange_descriptor
             )
 
-        return cls(comm, tag, transformers, timer)
+        return cls(comm, tag, transformers, timer, finalize_on_wait)
 
     @classmethod
     def from_vector_specifications(
@@ -108,6 +111,7 @@ class HaloUpdater:
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
+        finalize_on_wait: bool = False,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
 
@@ -161,7 +165,7 @@ class HaloUpdater:
                 exchange_descriptors_y=exchange_descriptor_y,
             )
 
-        return cls(comm, tag, transformers, timer)
+        return cls(comm, tag, transformers, timer, finalize_on_wait)
 
     def update(
         self,
@@ -244,8 +248,12 @@ class HaloUpdater:
                 buffer.async_unpack(
                     self._inflight_x_quantities, self._inflight_y_quantities
                 )
-            for buffer in self._transformers.values():
-                buffer.synchronize()
+            if self._finalize_on_wait:
+                for transformer in self._transformers.values():
+                    transformer.finalize()
+            else:
+                for transformer in self._transformers.values():
+                    transformer.synchronize()
 
         self._inflight_x_quantities = None
         self._inflight_y_quantities = None

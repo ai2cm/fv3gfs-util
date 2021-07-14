@@ -485,7 +485,9 @@ class CubedSphereCommunicator(Communicator):
             )
             specifications.append(specification)
 
-        halo_updater = self.get_scalar_halo_updater(specifications)
+        halo_updater = self.get_scalar_halo_updater(
+            specifications, finalize_on_wait=True
+        )
         halo_updater.start(quantities)
         return halo_updater
 
@@ -580,7 +582,9 @@ class CubedSphereCommunicator(Communicator):
             )
             y_specifications.append(y_specification)
 
-        halo_updater = self.get_vector_halo_updater(x_specifications, y_specifications)
+        halo_updater = self.get_vector_halo_updater(
+            x_specifications, y_specifications, finalize_on_wait=True
+        )
         halo_updater.start(x_quantities, y_quantities)
         return halo_updater
 
@@ -756,7 +760,9 @@ class CubedSphereCommunicator(Communicator):
             "returned by start_vector_halo_update"
         )
 
-    def get_scalar_halo_updater(self, specifications: List[HaloUpdateSpec]):
+    def get_scalar_halo_updater(
+        self, specifications: List[HaloUpdateSpec], finalize_on_wait: bool = False,
+    ):
         if len(specifications) == 0:
             raise RuntimeError("Cannot create updater with specifications list")
         if specifications[0].n_halo_points == 0:
@@ -768,12 +774,14 @@ class CubedSphereCommunicator(Communicator):
             self.boundaries.values(),
             self._get_halo_tag(),
             self.timer,
+            finalize_on_wait=finalize_on_wait,
         )
 
     def get_vector_halo_updater(
         self,
         specifications_x: List[HaloUpdateSpec],
         specifications_y: List[HaloUpdateSpec],
+        finalize_on_wait: bool = False,
     ):
         if len(specifications_x) == 0 and len(specifications_y) == 0:
             raise RuntimeError("Cannot create updater with empty specifications list")
@@ -790,6 +798,7 @@ class CubedSphereCommunicator(Communicator):
             self.boundaries.values(),
             self._get_halo_tag(),
             self.timer,
+            finalize_on_wait=finalize_on_wait,
         )
 
 

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from .buffer import Buffer
 from .quantity import Quantity
 from .types import NumpyModule
-from typing import List, Tuple, Optional, Dict, Any, Iterable
+from typing import List, Tuple, Optional, Dict, Any, Sequence
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
 from .utils import device_synchronize
@@ -191,14 +191,14 @@ class HaloDataTransformer:
     _pack_buffer: Optional[Buffer]
     _unpack_buffer: Optional[Buffer]
 
-    _infos_x: List[HaloExchangeData]
-    _infos_y: List[HaloExchangeData]
+    _infos_x: Tuple[HaloExchangeData, ...]
+    _infos_y: Tuple[HaloExchangeData, ...]
 
     def __init__(
         self,
         np_module: NumpyModule,
-        exchange_descriptors_x: Iterable[HaloExchangeData],
-        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeData],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
     ) -> None:
         """Init routine.
 
@@ -221,7 +221,7 @@ class HaloDataTransformer:
         self._infos_y = (
             tuple(exchange_descriptors_y)
             if exchange_descriptors_y is not None
-            else None
+            else tuple()
         )
         self._pack_buffer = None
         self._unpack_buffer = None
@@ -235,8 +235,8 @@ class HaloDataTransformer:
     @staticmethod
     def get(
         np_module: NumpyModule,
-        exchange_descriptors_x: Iterable[HaloExchangeData],
-        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeData],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
     ) -> "HaloDataTransformer":
         """Construct a module from a numpy-like module.
 
@@ -544,8 +544,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def __init__(
         self,
         np_module: NumpyModule,
-        exchange_descriptors_x: Iterable[HaloExchangeData],
-        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeData],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
     ) -> None:
         self._cu_kernel_args: Dict[UUID, HaloDataTransformerGPU._CuKernelArgs] = {}
         super().__init__(
