@@ -5,7 +5,7 @@ from .types import NumpyModule
 from typing import List, Tuple, Optional, Dict, Any
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
-from .utils import device_synchronize, flatten
+from .utils import device_synchronize
 import numpy as np
 from uuid import UUID, uuid1
 from .cuda_kernels import (
@@ -80,7 +80,7 @@ def _build_flatten_indices(
     rotate: bool,
     rotation: int,
 ):
-    """Build an array of indexing from a slice description.
+    """Build an array of indexing from a slice & memory description to build an indexation into the "flatten" memory.
     
     Go from a memory layout (strides, itemsize, shape) and slices into it to a
     single array of indices. We leverage numpy iterator and calculate from the multi_index
@@ -376,6 +376,11 @@ class HaloDataTransformer:
 
 
 class HaloDataTransformerCPU(HaloDataTransformer):
+    """Pack/unpack data in a single buffer using numpy flattening & slicing.
+
+    Default behavior, could be done with any numpy-like library.
+    """
+
     def synchronize(self):
         # CPU doesn't do true async
         pass
@@ -421,7 +426,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
                 -info_x.pack_clockwise_rotation,
             )
             self._pack_buffer.assign_from(
-                flatten(source_view),
+                source_view.flatten(),
                 buffer_slice=np.index_exp[offset : offset + data_size],
             )
             offset += data_size
@@ -458,12 +463,12 @@ class HaloDataTransformerCPU(HaloDataTransformer):
 
             # Pack X/Y data slices in the buffer
             self._pack_buffer.assign_from(
-                flatten(x_view),
+                x_view.flatten(),
                 buffer_slice=np.index_exp[offset : offset + x_view.size],
             )
             offset += x_view.size
             self._pack_buffer.assign_from(
-                flatten(y_view),
+                y_view.flatten(),
                 buffer_slice=np.index_exp[offset : offset + y_view.size],
             )
             offset += y_view.size
@@ -550,6 +555,16 @@ class HaloDataTransformerCPU(HaloDataTransformer):
 
 
 class HaloDataTransformerGPU(HaloDataTransformer):
+    """Pack/unpack data in a single buffer using CUDA Kernels.
+
+    In order to efficiently pack/unpack on the GPU to a single GPU buffer
+    we use streamed (e.g. async) kernels per quantity per edge to send. The
+    kernels are store in `cuda_kernels.py`, they both follow the same simple pattern
+    by reading the indices to the device memory of the data to pack/unpack.
+    `_flatten_indices` is the routine that take the layout of the memory and the slice and
+    compute an array of index into the original memory.
+    """
+
     @dataclass
     class _CuKernelArgs:
         """All arguments required for the CUDA kernels."""
@@ -567,9 +582,9 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _flatten_indices(
         self, exchange_data: _HaloExchangeData, slices: Tuple[slice], rotate: bool,
     ) -> "cp.ndarray":
-        """Extract a flat array of indices for this send operation.
+        """Extract a flat array of indices from the memory layout and the slice.
 
-        Also take care of rotating the indices to account for axis orientation
+        Also take care of rotating the indices to account for axis orientation.
         """
         key = str(
             (
@@ -581,6 +596,9 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             )
         )
 
+        # Their is a lazy caching mechanism here because in our use case
+        # (halo exchange) their is a limited set of index patterns but a
+        # large number of exchanges.
         if key not in INDICES_GPU_CACHE.keys():
             _build_flatten_indices(
                 key,

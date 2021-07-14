@@ -97,14 +97,6 @@ def device_synchronize():
         cp.cuda.runtime.deviceSynchronize()
 
 
-def flatten(array: np.ndarray) -> np.ndarray:
-    """Offers a common API for array flatten between numpy and cupy"""
-    if cp and isinstance(array, cp.ndarray):
-        return array.flatten()
-    else:
-        return array.flatten(order="C")
-
-
 def safe_mpi_allocate(
     allocator: Allocator, shape: Iterable[int], dtype: type
 ) -> np.ndarray:

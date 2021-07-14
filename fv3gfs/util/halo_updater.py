@@ -2,11 +2,22 @@ from .types import NumpyModule, AsyncRequest
 from .halo_data_transformer import HaloDataTransformer, HaloUpdateSpec
 from ._timing import Timer, NullTimer
 from .boundary import Boundary
-from typing import Iterable, Tuple, List, Optional, TYPE_CHECKING
+from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
 from .quantity import Quantity
 
 if TYPE_CHECKING:
     from .communicator import Communicator
+
+
+class HaloTransformerDict(dict):
+    """Dict that knows how to construct HaloDataTransformer"""
+
+    def __init__(self, numpy_module):
+        self._numpy_module = numpy_module
+
+    def __missing__(self, key):
+        ret = self[key] = HaloDataTransformer.get_from_numpy_module(self._numpy_module)
+        return ret
 
 
 class HaloUpdater:
@@ -27,12 +38,12 @@ class HaloUpdater:
         self,
         comm: "Communicator",
         tag: int,
-        packed_buffers: Iterable[Tuple[int, HaloDataTransformer]],
+        transformers: Dict[int, HaloDataTransformer],
         timer: Timer,
     ):
         self._comm = comm
         self._tag = tag
-        self._packed_buffers = packed_buffers
+        self._transformers = transformers
         self._timer = timer
         self._recv_requests: List[AsyncRequest] = []
         self._send_requests: List[AsyncRequest] = []
@@ -48,7 +59,7 @@ class HaloUpdater:
             raise RuntimeError(
                 "An halo exchange wasn't completed and a wait() call was expected"
             )
-        for _to_rank, buffer in self._packed_buffers:
+        for _to_rank, buffer in self._transformers:
             buffer.finalize()
 
     @classmethod
@@ -77,23 +88,22 @@ class HaloUpdater:
 
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        packed_buffers: List[Tuple[int, HaloDataTransformer]] = []
+        transformers: Dict[int, HaloDataTransformer] = HaloTransformerDict(
+            numpy_like_module
+        )
         for boundary in boundaries:
             for specification in specifications:
-                buffer = cls._get_packed_buffer(
-                    packed_buffers, numpy_like_module, boundary
-                )
-                buffer.add_scalar_specification(
+                transformers[boundary.to_rank].add_scalar_specification(
                     specification,
                     boundary.send_slice(specification),
                     boundary.n_clockwise_rotations,
                     boundary.recv_slice(specification),
                 )
 
-        for _to_rank, buffer in packed_buffers:
-            buffer.compile()
+        for transformer in transformers.values():
+            transformer.compile()
 
-        return cls(comm, tag, packed_buffers, timer)
+        return cls(comm, tag, transformers, timer)
 
     @classmethod
     def from_vector_specifications(
@@ -125,15 +135,14 @@ class HaloUpdater:
         """
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        packed_buffers: List[Tuple[int, HaloDataTransformer]] = []
+        transformers: Dict[int, HaloDataTransformer] = HaloTransformerDict(
+            numpy_like_module
+        )
         for boundary in boundaries:
             for specification_x, specification_y in zip(
                 specifications_x, specifications_y
             ):
-                buffer = cls._get_packed_buffer(
-                    packed_buffers, numpy_like_module, boundary
-                )
-                buffer.add_vector_specification(
+                transformers[boundary.to_rank].add_vector_specification(
                     specification_x,
                     specification_y,
                     boundary.send_slice(specification_x),
@@ -143,41 +152,10 @@ class HaloUpdater:
                     boundary.recv_slice(specification_y),
                 )
 
-        for _to_rank, buffer in packed_buffers:
-            buffer.compile()
+        for transformer in transformers.values():
+            transformer.compile()
 
-        return cls(comm, tag, packed_buffers, timer)
-
-    @classmethod
-    def _get_packed_buffer(
-        cls,
-        packed_buffer: List[Tuple[int, HaloDataTransformer]],
-        numpy_like_module: NumpyModule,
-        boundary: Boundary,
-    ) -> HaloDataTransformer:
-        """Returns the correct packed_buffer from the list create it first if need be.
-
-        Args:
-            packed_buffer: list of Tuple [target_rank_to_send_data, HaloDataTransformer]
-            numpy_like_module: module implementing numpy API
-            boundary: information on the exchange boundary
-
-        Returns:
-            Correct HaloDataTransformer for target rank
-        """
-        to_rank_packed_buffer = [x for x in packed_buffer if x[0] == boundary.to_rank]
-        assert len(to_rank_packed_buffer) <= 1
-        if len(to_rank_packed_buffer) == 0:
-            packed_buffer.append(
-                (
-                    boundary.to_rank,
-                    HaloDataTransformer.get_from_numpy_module(numpy_like_module),
-                )
-            )
-            to_rank_packed_buffer = [
-                x for x in packed_buffer if x[0] == boundary.to_rank
-            ]
-        return to_rank_packed_buffer[0][1]
+        return cls(comm, tag, transformers, timer)
 
     def update(
         self,
@@ -208,10 +186,10 @@ class HaloUpdater:
         # Post recv MPI order
         with self._timer.clock("Irecv"):
             self._recv_requests = []
-            for to_rank, packed_buffer in self._packed_buffers:
+            for to_rank, transformer in self._transformers.items():
                 self._recv_requests.append(
                     self._comm.comm.Irecv(
-                        packed_buffer.get_unpack_buffer().array,
+                        transformer.get_unpack_buffer().array,
                         source=to_rank,
                         tag=self._tag,
                     )
@@ -219,10 +197,10 @@ class HaloUpdater:
 
         # Pack quantities halo points data into buffers
         with self._timer.clock("pack"):
-            for _to_rank, buffer in self._packed_buffers:
-                buffer.async_pack(quantities_x, quantities_y)
-            for _to_rank, buffer in self._packed_buffers:
-                buffer.synchronize()
+            for transformer in self._transformers.values():
+                transformer.async_pack(quantities_x, quantities_y)
+            for transformer in self._transformers.values():
+                transformer.synchronize()
 
         self._inflight_x_quantities = quantities_x
         self._inflight_y_quantities = quantities_y
@@ -230,10 +208,10 @@ class HaloUpdater:
         # Post send MPI order
         with self._timer.clock("Isend"):
             self._send_requests = []
-            for to_rank, packed_buffer in self._packed_buffers:
+            for to_rank, transformer in self._transformers.items():
                 self._send_requests.append(
                     self._comm.comm.Isend(
-                        packed_buffer.get_pack_buffer().array,
+                        transformer.get_pack_buffer().array,
                         dest=to_rank,
                         tag=self._tag,
                     )
@@ -254,11 +232,11 @@ class HaloUpdater:
         # Unpack buffers (updated by MPI with neighbouring halos)
         # to proper quantities
         with self._timer.clock("unpack"):
-            for _to_rank, buffer in self._packed_buffers:
+            for buffer in self._transformers.values():
                 buffer.async_unpack(
                     self._inflight_x_quantities, self._inflight_y_quantities
                 )
-            for _to_rank, buffer in self._packed_buffers:
+            for buffer in self._transformers.values():
                 buffer.synchronize()
 
         self._inflight_x_quantities = None
