@@ -473,6 +473,7 @@ class CubedSphereCommunicator(Communicator):
         specifications = []
         for quantity in quantities:
             specification = HaloUpdateSpec(
+                n_halo_points=n_points,
                 shape=quantity.data.shape,
                 strides=quantity.data.strides,
                 itemsize=quantity.data.itemsize,
@@ -484,7 +485,7 @@ class CubedSphereCommunicator(Communicator):
             )
             specifications.append(specification)
 
-        halo_updater = self.get_scalar_halo_updater(specifications, n_points)
+        halo_updater = self.get_scalar_halo_updater(specifications)
         halo_updater.start(quantities)
         return halo_updater
 
@@ -555,6 +556,7 @@ class CubedSphereCommunicator(Communicator):
         y_specifications = []
         for x_quantity, y_quantity in zip(x_quantities, y_quantities):
             x_specification = HaloUpdateSpec(
+                n_halo_points=n_points,
                 shape=x_quantity.data.shape,
                 strides=x_quantity.data.strides,
                 itemsize=x_quantity.data.itemsize,
@@ -566,6 +568,7 @@ class CubedSphereCommunicator(Communicator):
             )
             x_specifications.append(x_specification)
             y_specification = HaloUpdateSpec(
+                n_halo_points=n_points,
                 shape=y_quantity.data.shape,
                 strides=y_quantity.data.strides,
                 itemsize=y_quantity.data.itemsize,
@@ -577,9 +580,7 @@ class CubedSphereCommunicator(Communicator):
             )
             y_specifications.append(y_specification)
 
-        halo_updater = self.get_vector_halo_updater(
-            x_specifications, y_specifications, n_points
-        )
+        halo_updater = self.get_vector_halo_updater(x_specifications, y_specifications)
         halo_updater.start(x_quantities, y_quantities)
         return halo_updater
 
@@ -755,10 +756,10 @@ class CubedSphereCommunicator(Communicator):
             "returned by start_vector_halo_update"
         )
 
-    def get_scalar_halo_updater(
-        self, specifications: List[HaloUpdateSpec], n_halo_points: int
-    ):
-        if n_halo_points == 0:
+    def get_scalar_halo_updater(self, specifications: List[HaloUpdateSpec]):
+        if len(specifications) == 0:
+            raise RuntimeError("Cannot create updater with specifications list")
+        if specifications[0].n_halo_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         return HaloUpdater.from_scalar_specifications(
             self,
@@ -766,7 +767,6 @@ class CubedSphereCommunicator(Communicator):
             specifications,
             self.boundaries.values(),
             self._get_halo_tag(),
-            n_halo_points,
             self.timer,
         )
 
@@ -774,10 +774,14 @@ class CubedSphereCommunicator(Communicator):
         self,
         specifications_x: List[HaloUpdateSpec],
         specifications_y: List[HaloUpdateSpec],
-        n_halo_points: int,
     ):
-        if n_halo_points == 0:
-            raise ValueError("cannot perform a halo update on zero halo points")
+        if len(specifications_x) == 0 and len(specifications_y) == 0:
+            raise RuntimeError("Cannot create updater with empty specifications list")
+        if (
+            specifications_x[0].n_halo_points == 0
+            and specifications_y[0].n_halo_points == 0
+        ):
+            raise ValueError("Cannot perform a halo update on zero halo points")
         return HaloUpdater.from_vector_specifications(
             self,
             self._maybe_force_cpu(specifications_x[0].numpy_module),
@@ -785,7 +789,6 @@ class CubedSphereCommunicator(Communicator):
             specifications_y,
             self.boundaries.values(),
             self._get_halo_tag(),
-            n_halo_points,
             self.timer,
         )
 

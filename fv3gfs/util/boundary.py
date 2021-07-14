@@ -36,19 +36,19 @@ class Boundary:
         """
         return self._view(quantity, n_points, interior=False)
 
-    def send_slice(self, specification: HaloUpdateSpec, n_points: int) -> Tuple[slice]:
+    def send_slice(self, specification: HaloUpdateSpec) -> Tuple[slice]:
         """Return the index slices which shoud be sent at this boundary.
 
         Args:
-            quantity: quantity for which to return slices
-            n_points: the width of boundary to include
+            specification: data specifications for the halo. Including shape
+            and number of halo points.
         
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice_from_spec(specification, n_points, interior=True)
+        return self._slice_from_spec(specification, interior=True)
 
-    def recv_slice(self, specification: HaloUpdateSpec, n_points: int) -> Tuple[slice]:
+    def recv_slice(self, specification: HaloUpdateSpec) -> Tuple[slice]:
         """Return the index slices which should be received at this boundary.
 
         Args:
@@ -58,12 +58,12 @@ class Boundary:
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice_from_spec(specification, n_points, interior=False)
+        return self._slice_from_spec(specification, interior=False)
 
     def _slice_from_spec(
-        self, specification: HaloUpdateSpec, n_points: int, interior: bool
+        self, specification: HaloUpdateSpec, interior: bool
     ) -> Tuple[slice]:
-        """Abstract function to be reimplemented by child class.
+        """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
         
         Return:
             A tuple of slices (one per dimensions)
@@ -71,7 +71,7 @@ class Boundary:
         raise NotImplementedError()
 
     def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
-        """Abstract function to be reimplemented by child class.
+        """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
         
         Return:
             A tuple of slices (one per dimensions)
@@ -112,7 +112,7 @@ class SimpleBoundary(Boundary):
         )
 
     def _slice_from_spec(
-        self, specification: HaloUpdateSpec, n_points: int, interior: bool
+        self, specification: HaloUpdateSpec, interior: bool
     ) -> Tuple[slice]:
         return get_boundary_slice(
             specification.dims,
@@ -120,6 +120,6 @@ class SimpleBoundary(Boundary):
             specification.extent,
             specification.shape,
             self.boundary_type,
-            n_points,
+            specification.n_halo_points,
             interior,
         )

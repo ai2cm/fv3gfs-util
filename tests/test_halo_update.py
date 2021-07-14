@@ -411,12 +411,12 @@ def test_zeros_halo_update(
     ranks_per_tile,
 ):
     """test that zeros from adjacent domains get written over ones on local halo"""
-    halo_udapter_list = []
+    halo_updater_list = []
     if 0 < n_points_update <= n_points:
         for communicator, quantity in zip(communicator_list, zeros_quantity_list):
             halo_udapter = communicator.start_halo_update(quantity, n_points_update)
-            halo_udapter_list.append(halo_udapter)
-        for halo_udapter in halo_udapter_list:
+            halo_updater_list.append(halo_udapter)
+        for halo_udapter in halo_updater_list:
             halo_udapter.wait()
         for rank, quantity in enumerate(zeros_quantity_list):
             boundaries = boundary_dict[rank % ranks_per_tile]

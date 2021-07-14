@@ -41,8 +41,13 @@ class HaloUpdater:
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""
-        assert self._inflight_x_quantities is None
-        assert self._inflight_y_quantities is None
+        if (
+            self._inflight_x_quantities is not None
+            or self._inflight_y_quantities is not None
+        ):
+            raise RuntimeError(
+                "An halo exchange wasn't completed and a wait() call was expected"
+            )
         for _to_rank, buffer in self._packed_buffers:
             buffer.finalize()
 
@@ -54,7 +59,6 @@ class HaloUpdater:
         specifications: Iterable[HaloUpdateSpec],
         boundaries: Iterable[Boundary],
         tag: int,
-        n_halo_points: int,
         optional_timer: Optional[Timer] = None,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
@@ -62,10 +66,9 @@ class HaloUpdater:
         Args:
             comm: communicator to post network messages
             numpy_like_module: module implementing numpy API
-            quantities: data to exchange.
+            specifications: data specifications to exchange, including number of halo points
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
-            n_halo_points: size of the halo to exchange.
             optional_timer: timing of operations.
         
         Returns:
@@ -82,9 +85,9 @@ class HaloUpdater:
                 )
                 buffer.add_scalar_specification(
                     specification,
-                    boundary.send_slice(specification, n_halo_points),
+                    boundary.send_slice(specification),
                     boundary.n_clockwise_rotations,
-                    boundary.recv_slice(specification, n_halo_points),
+                    boundary.recv_slice(specification),
                 )
 
         for _to_rank, buffer in packed_buffers:
@@ -101,7 +104,6 @@ class HaloUpdater:
         specifications_y: Iterable[HaloUpdateSpec],
         boundaries: Iterable[Boundary],
         tag: int,
-        n_halo_points: int,
         optional_timer: Optional[Timer] = None,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
@@ -109,10 +111,10 @@ class HaloUpdater:
         Args:
             comm: communicator to post network messages
             numpy_like_module: module implementing numpy API
-            quantities_x: quantities to exchange along the x axis.
-                          Length must match y quantities.
-            quantities_y: quantities to exchange along the y axis.
-                          Length must match x quantities.
+            specifications_x: specifications to exchange along the x axis.
+                          Length must match y specifications.
+            specifications_y: specifications to exchange along the y axis.
+                          Length must match x specifications.
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
             n_halo_points: size of the halo to exchange.
@@ -134,11 +136,11 @@ class HaloUpdater:
                 buffer.add_vector_specification(
                     specification_x,
                     specification_y,
-                    boundary.send_slice(specification_x, n_halo_points),
-                    boundary.send_slice(specification_y, n_halo_points),
+                    boundary.send_slice(specification_x),
+                    boundary.send_slice(specification_y),
                     boundary.n_clockwise_rotations,
-                    boundary.recv_slice(specification_x, n_halo_points),
-                    boundary.recv_slice(specification_y, n_halo_points),
+                    boundary.recv_slice(specification_x),
+                    boundary.recv_slice(specification_y),
                 )
 
         for _to_rank, buffer in packed_buffers:
@@ -177,7 +179,7 @@ class HaloUpdater:
             ]
         return to_rank_packed_buffer[0][1]
 
-    def do(
+    def update(
         self,
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
@@ -209,7 +211,7 @@ class HaloUpdater:
             for to_rank, packed_buffer in self._packed_buffers:
                 self._recv_requests.append(
                     self._comm.comm.Irecv(
-                        packed_buffer.get_recv_buffer().array,
+                        packed_buffer.get_unpack_buffer().array,
                         source=to_rank,
                         tag=self._tag,
                     )
@@ -231,7 +233,7 @@ class HaloUpdater:
             for to_rank, packed_buffer in self._packed_buffers:
                 self._send_requests.append(
                     self._comm.comm.Isend(
-                        packed_buffer.get_send_buffer().array,
+                        packed_buffer.get_pack_buffer().array,
                         dest=to_rank,
                         tag=self._tag,
                     )
