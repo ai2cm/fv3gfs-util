@@ -280,7 +280,6 @@ def _get_boundaries(quantity, n_halos):
 
 def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     original_quantity: Quantity = copy.deepcopy(quantity)
-    data_transformer = HaloDataTransformer.get_from_numpy_module(quantity.np)
 
     send_boundaries, recv_boundaries = _get_boundaries(quantity, n_halos)
     N_edge_boundaries = {
@@ -309,18 +308,22 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
         dtype=quantity.metadata.dtype,
     )
 
-    data_transformer.add_scalar_specification(
-        specification,
-        N_edge_boundaries[rotation][0],
-        rotation,
-        N_edge_boundaries[rotation][1],
-    )
-    data_transformer.add_scalar_specification(
-        specification,
-        NE_corner_boundaries[rotation][0],
-        rotation,
-        NE_corner_boundaries[rotation][1],
-    )
+    exchange_descriptors = [
+        HaloExchangeData(
+            specification,
+            N_edge_boundaries[rotation][0],
+            rotation,
+            N_edge_boundaries[rotation][1],
+        ),
+        HaloExchangeData(
+            specification,
+            NE_corner_boundaries[rotation][0],
+            rotation,
+            NE_corner_boundaries[rotation][1],
+        ),
+    ]
+
+    data_transformer = HaloDataTransformer.get(quantity.np, exchange_descriptors)
 
     data_transformer.async_pack([quantity, quantity])
     data_transformer.synchronize()
@@ -398,7 +401,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         dtype=y_quantity.metadata.dtype,
     )
 
-    exchange_descriptors_x = {
+    exchange_descriptors_x = [
         HaloExchangeData(
             specification_x,
             N_edge_boundaries[rotation][0],
@@ -407,12 +410,12 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         ),
         HaloExchangeData(
             specification_x,
-            N_edge_boundaries[rotation][0],
+            NE_corner_boundaries[rotation][0],
             rotation,
-            N_edge_boundaries[rotation][1],
+            NE_corner_boundaries[rotation][1],
         ),
-    }
-    exchange_descriptors_y = {
+    ]
+    exchange_descriptors_y = [
         HaloExchangeData(
             specification_y,
             N_edge_boundaries[rotation][0],
@@ -421,11 +424,11 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         ),
         HaloExchangeData(
             specification_y,
-            N_edge_boundaries[rotation][0],
+            NE_corner_boundaries[rotation][0],
             rotation,
-            N_edge_boundaries[rotation][1],
+            NE_corner_boundaries[rotation][1],
         ),
-    }
+    ]
 
     data_transformer = HaloDataTransformer.get(
         x_quantity.np, exchange_descriptors_x, exchange_descriptors_y
