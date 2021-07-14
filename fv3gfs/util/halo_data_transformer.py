@@ -605,10 +605,10 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 self._cu_kernel_args[info_x._id] = HaloDataTransformerGPU._CuKernelArgs(
                     stream=_pop_stream(),
                     x_send_indices=self._flatten_indices(
-                        info_x, info_x.specification, info_x.pack_slices, True
+                        info_x, info_x.pack_slices, True
                     ),
                     x_recv_indices=self._flatten_indices(
-                        info_x, info_x.specification, info_x.unpack_slices, False
+                        info_x, info_x.unpack_slices, False
                     ),
                     y_send_indices=None,
                     y_recv_indices=None,
@@ -618,16 +618,16 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 self._cu_kernel_args[info_x._id] = HaloDataTransformerGPU._CuKernelArgs(
                     stream=_pop_stream(),
                     x_send_indices=self._flatten_indices(
-                        info_x, info_x.specification, info_x.pack_slices, True
+                        info_x, info_x.pack_slices, True
                     ),
                     x_recv_indices=self._flatten_indices(
-                        info_x, info_x.specification, info_x.unpack_slices, False
+                        info_x, info_x.unpack_slices, False
                     ),
                     y_send_indices=self._flatten_indices(
-                        info_y, info_y.specification, info_y.pack_slices, True
+                        info_y, info_y.pack_slices, True
                     ),
                     y_recv_indices=self._flatten_indices(
-                        info_y, info_y.specification, info_y.unpack_slices, False
+                        info_y, info_y.unpack_slices, False
                     ),
                 )
 
