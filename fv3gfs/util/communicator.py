@@ -105,14 +105,14 @@ class Communicator:
         device_synchronize()
 
     def _Scatter(self, numpy_module, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
-            numpy_module.empty, recvbuf
+        with send_buffer(numpy_module.zeros, sendbuf) as send, recv_buffer(
+            numpy_module.zeros, recvbuf
         ) as recv:
             self.comm.Scatter(send, recv, **kwargs)
 
     def _Gather(self, numpy_module, sendbuf, recvbuf, **kwargs):
-        with send_buffer(numpy_module.empty, sendbuf) as send, recv_buffer(
-            numpy_module.empty, recvbuf
+        with send_buffer(numpy_module.zeros, sendbuf) as send, recv_buffer(
+            numpy_module.zeros, recvbuf
         ) as recv:
             self.comm.Gather(send, recv, **kwargs)
 
@@ -143,7 +143,7 @@ class Communicator:
         if self.rank == constants.ROOT_RANK:
             send_quantity = cast(Quantity, send_quantity)
             with array_buffer(
-                self._maybe_force_cpu(metadata.np).empty,
+                self._maybe_force_cpu(metadata.np).zeros,
                 (self.partitioner.total_ranks,) + shape,
                 dtype=metadata.dtype,
             ) as sendbuf:
@@ -175,7 +175,7 @@ class Communicator:
     ) -> Quantity:
         """Initialize a Quantity for use when receiving global data during gather"""
         recv_quantity = Quantity(
-            send_metadata.np.empty(global_extent, dtype=send_metadata.dtype),
+            send_metadata.np.zeros(global_extent, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
             units=send_metadata.units,
             origin=tuple([0 for dim in send_metadata.dims]),
@@ -189,7 +189,7 @@ class Communicator:
     ) -> Quantity:
         """Initialize a Quantity for use when receiving subtile data during scatter"""
         recv_quantity = Quantity(
-            send_metadata.np.empty(shape, dtype=send_metadata.dtype),
+            send_metadata.np.zeros(shape, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
             units=send_metadata.units,
             gt4py_backend=send_metadata.gt4py_backend,
@@ -212,7 +212,7 @@ class Communicator:
         result: Optional[Quantity]
         if self.rank == constants.ROOT_RANK:
             with array_buffer(
-                send_quantity.np.empty,
+                send_quantity.np.zeros,
                 (self.partitioner.total_ranks,) + tuple(send_quantity.extent),
                 dtype=send_quantity.data.dtype,
             ) as recvbuf:
@@ -410,7 +410,7 @@ class CubedSphereCommunicator(Communicator):
         # needs to change the quantity dimensions since we add a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
-            metadata.np.empty(global_extent, dtype=metadata.dtype),
+            metadata.np.zeros(global_extent, dtype=metadata.dtype),
             dims=(constants.TILE_DIM,) + metadata.dims,
             units=metadata.units,
             origin=(0,) + tuple([0 for dim in metadata.dims]),
@@ -431,7 +431,7 @@ class CubedSphereCommunicator(Communicator):
         # needs to change the quantity dimensions since we remove a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
-            metadata.np.empty(shape, dtype=metadata.dtype),
+            metadata.np.zeros(shape, dtype=metadata.dtype),
             dims=metadata.dims[1:],
             units=metadata.units,
             gt4py_backend=metadata.gt4py_backend,
@@ -730,7 +730,7 @@ class CubedSphereCommunicator(Communicator):
         # copy the resulting view in a contiguous array for transfer
         with self.timer.clock("pack"):
             buffer = Buffer.pop_from_cache(
-                numpy_module.empty, in_array.shape, in_array.dtype
+                numpy_module.zeros, in_array.shape, in_array.dtype
             )
             buffer.assign_from(in_array)
             buffer.finalize_memory_transfer()
@@ -742,7 +742,7 @@ class CubedSphereCommunicator(Communicator):
         # Prepare a contiguous buffer to receive data
         with self.timer.clock("Irecv"):
             buffer = Buffer.pop_from_cache(
-                numpy_module.empty, out_array.shape, out_array.dtype
+                numpy_module.zeros, out_array.shape, out_array.dtype
             )
             recv_request = self.comm.Irecv(buffer.array, **kwargs)
         return (recv_request, buffer, out_array)

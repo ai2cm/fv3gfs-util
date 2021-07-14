@@ -78,39 +78,39 @@ def gpu_communicators(cube_partitioner):
     return return_list
 
 
-# To record the calls to cp.empty/np.empty we use a global
+# To record the calls to cp.ZEROS/np.ZEROS we use a global
 # dict indexed on the functions
-global N_EMPTY_CALLS
-N_EMPTY_CALLS = {}
+global N_ZEROS_CALLS
+N_ZEROS_CALLS = {}
 
 
 @contextlib.contextmanager
-def module_count_calls_to_ones(module):
-    global N_EMPTY_CALLS
-    N_EMPTY_CALLS[module.empty] = 0
+def module_count_calls_to_zeros(module):
+    global N_ZEROS_CALLS
+    N_ZEROS_CALLS[module.zeros] = 0
 
     def count_calls(func):
         """Count func call"""
 
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
-            global N_EMPTY_CALLS
-            N_EMPTY_CALLS[func] = N_EMPTY_CALLS[func] + 1
+            global N_ZEROS_CALLS
+            N_ZEROS_CALLS[func] = N_ZEROS_CALLS[func] + 1
             return func(*args, **kwargs)
 
         return wrapped
 
     try:
-        original = module.empty
-        module.empty = count_calls(module.empty)
+        original = module.zeros
+        module.zeros = count_calls(module.zeros)
         yield
     finally:
-        module.empty = original
+        module.zeros = original
 
 
 @pytest.mark.parametrize("backend", ["cupy", "gt4py_cupy"], indirect=True)
 def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
-    with module_count_calls_to_ones(np), module_count_calls_to_ones(cp):
+    with module_count_calls_to_zeros(np), module_count_calls_to_zeros(cp):
         shape = (10, 10, 79)
         dims = (fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM)
         data = cp.ones(shape, dtype=float)
@@ -125,16 +125,17 @@ def test_halo_update_only_communicate_on_gpu(backend, gpu_communicators):
             halo_updater.wait()
 
     # We expect no np calls and several cp calls
-    global N_EMPTY_CALLS
-    assert N_EMPTY_CALLS[cp.empty] > 0
-    assert N_EMPTY_CALLS[np.empty] == 0
+    global N_ZEROS_CALLS
+    print(f"Results {N_ZEROS_CALLS}")
+    assert N_ZEROS_CALLS[cp.zeros] > 0
+    assert N_ZEROS_CALLS[np.zeros] == 0
 
 
 @pytest.mark.parametrize("backend", ["cupy", "gt4py_cupy"], indirect=True)
 def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
-    with module_count_calls_to_ones(np), module_count_calls_to_ones(cp):
+    with module_count_calls_to_zeros(np), module_count_calls_to_zeros(cp):
         shape = (10, 10, 79)
-        data = cp.empty(shape, dtype=float)
+        data = cp.ones(shape, dtype=float)
         quantity = fv3gfs.util.Quantity(
             data,
             dims=(fv3gfs.util.X_DIM, fv3gfs.util.Y_DIM, fv3gfs.util.Z_DIM,),
@@ -150,6 +151,6 @@ def test_halo_update_communicate_though_cpu(backend, cpu_communicators):
             halo_updater.wait()
 
     # We expect several np calls and several cp calls
-    global N_EMPTY_CALLS
-    assert N_EMPTY_CALLS[np.empty] > 0
-    assert N_EMPTY_CALLS[cp.empty] > 0
+    global N_ZEROS_CALLS
+    assert N_ZEROS_CALLS[np.zeros] > 0
+    assert N_ZEROS_CALLS[cp.zeros] == 0

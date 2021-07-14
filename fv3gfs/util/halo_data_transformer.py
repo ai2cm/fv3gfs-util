@@ -88,7 +88,7 @@ def _build_flatten_indices(
     """
 
     # Have to go down to numpy to leverage indices calculation
-    arr_indices = np.zeros(shape, dtype=np.int32, order="C")[slices]
+    arr_indices = np.empty(shape, dtype=np.int32, order="C")[slices]
 
     # Get offset from first index
     offset_dims = []
@@ -329,10 +329,10 @@ class HaloDataTransformer:
 
         # Retrieve two properly sized buffers
         self._pack_buffer = Buffer.pop_from_cache(
-            self._np_module.empty, (buffer_size), dtype
+            self._np_module.zeros, (buffer_size), dtype
         )
         self._unpack_buffer = Buffer.pop_from_cache(
-            self._np_module.empty, (buffer_size), dtype
+            self._np_module.zeros, (buffer_size), dtype
         )
 
     def ready(self) -> bool:
