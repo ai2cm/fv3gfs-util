@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from .buffer import Buffer
 from .quantity import Quantity
 from .types import NumpyModule
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Iterable
 from enum import Enum
 from .rotate import rotate_scalar_data, rotate_vector_data
 from .utils import device_synchronize
@@ -129,7 +129,7 @@ def _slices_length(slices: Tuple[slice]) -> int:
 
 
 @dataclass
-class _HaloExchangeData:
+class HaloExchangeData:
     """Memory description of the data exchanged.
     
     Args:
@@ -191,21 +191,41 @@ class HaloDataTransformer:
     _pack_buffer: Optional[Buffer]
     _unpack_buffer: Optional[Buffer]
 
-    _infos_x: List[_HaloExchangeData]
-    _infos_y: List[_HaloExchangeData]
+    _infos_x: List[HaloExchangeData]
+    _infos_y: List[HaloExchangeData]
 
-    def __init__(self, np_module: NumpyModule) -> None:
+    def __init__(
+        self,
+        np_module: NumpyModule,
+        exchange_descriptors_x: Iterable[HaloExchangeData],
+        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+    ) -> None:
         """Init routine.
 
         Arguments:
             np_module: numpy-like module for allocation
         """
-        self._type = _HaloDataTransformerType.UNKNOWN
+        self._type = (
+            _HaloDataTransformerType.SCALAR
+            if exchange_descriptors_y is None
+            else _HaloDataTransformerType.VECTOR
+        )
+        if exchange_descriptors_y is not None and len(exchange_descriptors_y) != len(
+            exchange_descriptors_x
+        ):
+            raise RuntimeError(
+                "Vector halo exchange must have same exchange data for X and Y"
+            )
         self._np_module = np_module
-        self._infos_x = []
-        self._infos_y = []
+        self._infos_x = tuple(exchange_descriptors_x)
+        self._infos_y = (
+            tuple(exchange_descriptors_y)
+            if exchange_descriptors_y is not None
+            else None
+        )
         self._pack_buffer = None
         self._unpack_buffer = None
+        self._compile()
 
     def __del__(self):
         """Del routine, making sure all buffers were inserted back into cache."""
@@ -213,7 +233,11 @@ class HaloDataTransformer:
         assert self._unpack_buffer is None
 
     @staticmethod
-    def get_from_numpy_module(np_module: NumpyModule) -> "HaloDataTransformer":
+    def get(
+        np_module: NumpyModule,
+        exchange_descriptors_x: Iterable[HaloExchangeData],
+        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+    ) -> "HaloDataTransformer":
         """Construct a module from a numpy-like module.
 
         Arguments:
@@ -222,78 +246,20 @@ class HaloDataTransformer:
         Return: an initialized packed buffer.
         """
         if np_module is np:
-            return HaloDataTransformerCPU(np)
+            return HaloDataTransformerCPU(
+                np,
+                exchange_descriptors_x,
+                exchange_descriptors_y=exchange_descriptors_y,
+            )
         elif np_module is cp:
-            return HaloDataTransformerGPU(cp)
+            return HaloDataTransformerGPU(
+                cp,
+                exchange_descriptors_x,
+                exchange_descriptors_y=exchange_descriptors_y,
+            )
 
         raise NotImplementedError(
             f"Quantity module {np_module} has no HaloDataTransformer implemented"
-        )
-
-    def add_scalar_specification(
-        self,
-        specification: HaloUpdateSpec,
-        send_slice: Tuple[slice],
-        n_clockwise_rotation: int,
-        recv_slice: Tuple[slice],
-    ):
-        """Add memory specification (scalar)."""
-        assert (
-            self._type == _HaloDataTransformerType.SCALAR
-            or self._type == _HaloDataTransformerType.UNKNOWN
-        )
-        if self._unpack_buffer is not None and self._pack_buffer is not None:
-            raise RuntimeError(
-                "This transformer has already been compiled"
-                "You can only compile one specification per Transformer."
-            )
-
-        self._type = _HaloDataTransformerType.SCALAR
-        self._infos_x.append(
-            _HaloExchangeData(
-                specification=specification,
-                pack_slices=send_slice,
-                pack_clockwise_rotation=n_clockwise_rotation,
-                unpack_slices=recv_slice,
-            )
-        )
-
-    def add_vector_specification(
-        self,
-        specification_x: HaloUpdateSpec,
-        specification_y: HaloUpdateSpec,
-        x_pack_slice: Tuple[slice],
-        y_pack_slice: Tuple[slice],
-        n_clockwise_rotation: int,
-        x_recv_slice: Tuple[slice],
-        y_recv_slice: Tuple[slice],
-    ):
-        """Add memory specification (vector)."""
-        assert (
-            self._type == _HaloDataTransformerType.VECTOR
-            or self._type == _HaloDataTransformerType.UNKNOWN
-        )
-        if self._unpack_buffer is not None and self._pack_buffer is not None:
-            raise RuntimeError(
-                "This transformer has already been compiled"
-                "You can only compile one specification per Transformer."
-            )
-        self._type = _HaloDataTransformerType.VECTOR
-        self._infos_x.append(
-            _HaloExchangeData(
-                specification=specification_x,
-                pack_slices=x_pack_slice,
-                pack_clockwise_rotation=n_clockwise_rotation,
-                unpack_slices=x_recv_slice,
-            )
-        )
-        self._infos_y.append(
-            _HaloExchangeData(
-                specification=specification_y,
-                pack_slices=y_pack_slice,
-                pack_clockwise_rotation=n_clockwise_rotation,
-                unpack_slices=y_recv_slice,
-            )
         )
 
     def get_unpack_buffer(self) -> Buffer:
@@ -314,7 +280,7 @@ class HaloDataTransformer:
             raise RuntimeError("Send buffer can't be retrieved before allocate()")
         return self._pack_buffer
 
-    def compile(self):
+    def _compile(self):
         """Allocate contiguous memory buffers from description queued."""
 
         # Compute required size
@@ -348,7 +314,7 @@ class HaloDataTransformer:
 
         Implementation should guarantee the send Buffer is ready for MPI communication.
         The send Buffer is held by this class."""
-        raise NotImplementedError()
+        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
     def async_unpack(
         self,
@@ -358,21 +324,21 @@ class HaloDataTransformer:
         """Unpack the buffer into destination quantities.
 
         Implementation DOESN'T HAVE TO guarantee transfer is done."""
-        raise NotImplementedError()
+        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
     def finalize(self):
         """Finalize operations after unpack.
 
         Implementation should guarantee all transfers are done.
         Implementation should return recv & send Buffers to the cache for reuse."""
-        raise NotImplementedError()
+        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
     def synchronize(self):
         """Synchronize all operations.
 
         Implementation guarantees all memory is now safe to access.
         """
-        raise NotImplementedError()
+        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
 
 class HaloDataTransformerCPU(HaloDataTransformer):
@@ -575,12 +541,21 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         y_send_indices: Optional["cp.ndarray"]
         y_recv_indices: Optional["cp.ndarray"]
 
-    def __init__(self, np_module: NumpyModule) -> None:
-        super().__init__(np_module)
+    def __init__(
+        self,
+        np_module: NumpyModule,
+        exchange_descriptors_x: Iterable[HaloExchangeData],
+        exchange_descriptors_y: Optional[Iterable[HaloExchangeData]] = None,
+    ) -> None:
         self._cu_kernel_args: Dict[UUID, HaloDataTransformerGPU._CuKernelArgs] = {}
+        super().__init__(
+            np_module,
+            exchange_descriptors_x,
+            exchange_descriptors_y=exchange_descriptors_y,
+        )
 
     def _flatten_indices(
-        self, exchange_data: _HaloExchangeData, slices: Tuple[slice], rotate: bool,
+        self, exchange_data: HaloExchangeData, slices: Tuple[slice], rotate: bool,
     ) -> "cp.ndarray":
         """Extract a flat array of indices from the memory layout and the slice.
 
@@ -614,11 +589,11 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         # We don't return a copy since the indices are read-only in the algorithm
         return INDICES_GPU_CACHE[key]
 
-    def compile(self):
+    def _compile(self):
         # Super to get buffer allocation
-        super().compile()
+        super()._compile()
         # Allocate the streams & build the indices arrays
-        if len(self._infos_y) == 0:
+        if self._type == _HaloDataTransformerType.SCALAR:
             for info_x in self._infos_x:
                 self._cu_kernel_args[info_x._id] = HaloDataTransformerGPU._CuKernelArgs(
                     stream=_pop_stream(),
@@ -632,6 +607,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                     y_recv_indices=None,
                 )
         else:
+            assert self._type == _HaloDataTransformerType.VECTOR
             for info_x, info_y in zip(self._infos_x, self._infos_y):
                 self._cu_kernel_args[info_x._id] = HaloDataTransformerGPU._CuKernelArgs(
                     stream=_pop_stream(),

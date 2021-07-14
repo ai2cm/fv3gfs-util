@@ -1,23 +1,13 @@
+from collections import defaultdict
 from .types import NumpyModule, AsyncRequest
-from .halo_data_transformer import HaloDataTransformer, HaloUpdateSpec
+from .halo_data_transformer import HaloDataTransformer, HaloExchangeData, HaloUpdateSpec
 from ._timing import Timer, NullTimer
 from .boundary import Boundary
-from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
+from typing import Dict, Iterable, List, Optional, TYPE_CHECKING, Tuple
 from .quantity import Quantity
 
 if TYPE_CHECKING:
     from .communicator import Communicator
-
-
-class HaloTransformerDict(dict):
-    """Dict that knows how to construct HaloDataTransformer"""
-
-    def __init__(self, numpy_module):
-        self._numpy_module = numpy_module
-
-    def __missing__(self, key):
-        ret = self[key] = HaloDataTransformer.get_from_numpy_module(self._numpy_module)
-        return ret
 
 
 class HaloUpdater:
@@ -47,8 +37,8 @@ class HaloUpdater:
         self._timer = timer
         self._recv_requests: List[AsyncRequest] = []
         self._send_requests: List[AsyncRequest] = []
-        self._inflight_x_quantities: Optional[List[Quantity]] = None
-        self._inflight_y_quantities: Optional[List[Quantity]] = None
+        self._inflight_x_quantities: Optional[Tuple[Quantity]] = None
+        self._inflight_y_quantities: Optional[Tuple[Quantity]] = None
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""
@@ -88,20 +78,23 @@ class HaloUpdater:
 
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        transformers: Dict[int, HaloDataTransformer] = HaloTransformerDict(
-            numpy_like_module
-        )
+        exchange_descriptors = defaultdict(list)
         for boundary in boundaries:
             for specification in specifications:
-                transformers[boundary.to_rank].add_scalar_specification(
-                    specification,
-                    boundary.send_slice(specification),
-                    boundary.n_clockwise_rotations,
-                    boundary.recv_slice(specification),
+                exchange_descriptors[boundary.to_rank].append(
+                    HaloExchangeData(
+                        specification,
+                        boundary.send_slice(specification),
+                        boundary.n_clockwise_rotations,
+                        boundary.recv_slice(specification),
+                    )
                 )
 
-        for transformer in transformers.values():
-            transformer.compile()
+        transformers = {}
+        for rank, exchange_descriptor in exchange_descriptors.items():
+            transformers[rank] = HaloDataTransformer.get(
+                numpy_like_module, exchange_descriptor
+            )
 
         return cls(comm, tag, transformers, timer)
 
@@ -135,25 +128,38 @@ class HaloUpdater:
         """
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        transformers: Dict[int, HaloDataTransformer] = HaloTransformerDict(
-            numpy_like_module
-        )
+        exchange_descriptors_x = defaultdict(list)
+        exchange_descriptors_y = defaultdict(list)
         for boundary in boundaries:
             for specification_x, specification_y in zip(
                 specifications_x, specifications_y
             ):
-                transformers[boundary.to_rank].add_vector_specification(
-                    specification_x,
-                    specification_y,
-                    boundary.send_slice(specification_x),
-                    boundary.send_slice(specification_y),
-                    boundary.n_clockwise_rotations,
-                    boundary.recv_slice(specification_x),
-                    boundary.recv_slice(specification_y),
+                exchange_descriptors_x[boundary.to_rank].append(
+                    HaloExchangeData(
+                        specification_x,
+                        boundary.send_slice(specification_x),
+                        boundary.n_clockwise_rotations,
+                        boundary.recv_slice(specification_x),
+                    )
+                )
+                exchange_descriptors_y[boundary.to_rank].append(
+                    HaloExchangeData(
+                        specification_y,
+                        boundary.send_slice(specification_y),
+                        boundary.n_clockwise_rotations,
+                        boundary.recv_slice(specification_y),
+                    )
                 )
 
-        for transformer in transformers.values():
-            transformer.compile()
+        transformers = {}
+        for (rank_x, exchange_descriptor_x), (_rank_y, exchange_descriptor_y) in zip(
+            exchange_descriptors_x.items(), exchange_descriptors_y.items()
+        ):
+            transformers[rank_x] = HaloDataTransformer.get(
+                numpy_like_module,
+                exchange_descriptor_x,
+                exchange_descriptors_y=exchange_descriptor_y,
+            )
 
         return cls(comm, tag, transformers, timer)
 
@@ -202,8 +208,10 @@ class HaloUpdater:
             for transformer in self._transformers.values():
                 transformer.synchronize()
 
-        self._inflight_x_quantities = quantities_x
-        self._inflight_y_quantities = quantities_y
+        self._inflight_x_quantities = tuple(quantities_x)
+        self._inflight_y_quantities = (
+            tuple(quantities_y) if quantities_y is not None else None
+        )
 
         # Post send MPI order
         with self._timer.clock("Isend"):

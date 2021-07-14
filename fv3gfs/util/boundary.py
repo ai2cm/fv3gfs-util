@@ -65,6 +65,9 @@ class Boundary:
     ) -> Tuple[slice]:
         """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
         
+        Args:
+            specification: memory information on this halo, including halo size
+
         Return:
             A tuple of slices (one per dimensions)
         """
@@ -72,6 +75,10 @@ class Boundary:
 
     def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
         """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
+
+        Args:
+            quantity: Quantity to slice, the memory information is used
+            n_points: size of the halo
         
         Return:
             A tuple of slices (one per dimensions)
