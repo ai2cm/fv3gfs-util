@@ -18,7 +18,7 @@ class HaloUpdater:
 
     - from_scalar_specifications/from_vector_specifications are used to create an HaloUpdater
       from a list of memory specifications
-    - do and start/wait trigger the halo exchange
+    - update and start/wait trigger the halo exchange
     - the class creates a "pattern" of exchange that can fit any memory given to do/start
     - temporary reference is helf between start and wait
     """

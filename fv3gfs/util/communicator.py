@@ -480,7 +480,7 @@ class CubedSphereCommunicator(Communicator):
                 origin=quantity.metadata.origin,
                 extent=quantity.metadata.extent,
                 dims=quantity.metadata.dims,
-                numpy_module=quantity.np,
+                numpy_module=self._maybe_force_cpu(quantity.np),
                 dtype=quantity.metadata.dtype,
             )
             specifications.append(specification)
@@ -563,7 +563,7 @@ class CubedSphereCommunicator(Communicator):
                 origin=x_quantity.metadata.origin,
                 extent=x_quantity.metadata.extent,
                 dims=x_quantity.metadata.dims,
-                numpy_module=x_quantity.np,
+                numpy_module=self._maybe_force_cpu(x_quantity.np),
                 dtype=x_quantity.metadata.dtype,
             )
             x_specifications.append(x_specification)
@@ -575,7 +575,7 @@ class CubedSphereCommunicator(Communicator):
                 origin=y_quantity.metadata.origin,
                 extent=y_quantity.metadata.extent,
                 dims=y_quantity.metadata.dims,
-                numpy_module=y_quantity.np,
+                numpy_module=self._maybe_force_cpu(y_quantity.np),
                 dtype=y_quantity.metadata.dtype,
             )
             y_specifications.append(y_specification)
