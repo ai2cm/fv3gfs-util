@@ -51,8 +51,9 @@ class HaloUpdater:
             raise RuntimeError(
                 "An halo exchange wasn't completed and a wait() call was expected"
             )
-        for _to_rank, buffer in self._transformers:
-            buffer.finalize()
+        if not self._finalize_on_wait:
+            for buffer in self._transformers.values():
+                buffer.finalize()
 
     @classmethod
     def from_scalar_specifications(
@@ -66,7 +67,7 @@ class HaloUpdater:
         finalize_on_wait: bool = False,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
-        
+
         Args:
             comm: communicator to post network messages
             numpy_like_module: module implementing numpy API
@@ -74,7 +75,7 @@ class HaloUpdater:
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
             optional_timer: timing of operations.
-        
+
         Returns:
             HaloUpdater ready to exchange data.
         """
@@ -126,7 +127,7 @@ class HaloUpdater:
             tag: network tag (to differentiate messaging) for this node.
             n_halo_points: size of the halo to exchange.
             optional_timer: timing of operations.
-        
+
         Returns:
             HaloUpdater ready to exchange data.
         """
