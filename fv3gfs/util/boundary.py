@@ -127,6 +127,6 @@ class SimpleBoundary(Boundary):
             specification.extent,
             specification.shape,
             self.boundary_type,
-            specification.n_halo_points,
+            specification.n_points,
             interior,
         )

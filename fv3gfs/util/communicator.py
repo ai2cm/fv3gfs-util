@@ -56,7 +56,7 @@ class HaloUpdateRequest:
         Args:
             send_data: a tuple of the MPI request and the buffer sent
             recv_data: a tuple of the MPI request, the temporary buffer and
-            the destination buffer
+                the destination buffer
             timer: optional, time the wait & unpack of a halo exchange
         """
         self._send_data = send_data
@@ -175,7 +175,7 @@ class Communicator:
     ) -> Quantity:
         """Initialize a Quantity for use when receiving global data during gather"""
         recv_quantity = Quantity(
-            send_metadata.np.zeros(global_extent, dtype=send_metadata.dtype),
+            send_metadata.np.empty(global_extent, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
             units=send_metadata.units,
             origin=tuple([0 for dim in send_metadata.dims]),
@@ -189,7 +189,7 @@ class Communicator:
     ) -> Quantity:
         """Initialize a Quantity for use when receiving subtile data during scatter"""
         recv_quantity = Quantity(
-            send_metadata.np.zeros(shape, dtype=send_metadata.dtype),
+            send_metadata.np.empty(shape, dtype=send_metadata.dtype),
             dims=send_metadata.dims,
             units=send_metadata.units,
             gt4py_backend=send_metadata.gt4py_backend,
@@ -212,7 +212,7 @@ class Communicator:
         result: Optional[Quantity]
         if self.rank == constants.ROOT_RANK:
             with array_buffer(
-                send_quantity.np.zeros,
+                send_quantity.np.empty,
                 (self.partitioner.total_ranks,) + tuple(send_quantity.extent),
                 dtype=send_quantity.data.dtype,
             ) as recvbuf:
@@ -410,7 +410,7 @@ class CubedSphereCommunicator(Communicator):
         # needs to change the quantity dimensions since we add a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
-            metadata.np.zeros(global_extent, dtype=metadata.dtype),
+            metadata.np.empty(global_extent, dtype=metadata.dtype),
             dims=(constants.TILE_DIM,) + metadata.dims,
             units=metadata.units,
             origin=(0,) + tuple([0 for dim in metadata.dims]),
@@ -431,7 +431,7 @@ class CubedSphereCommunicator(Communicator):
         # needs to change the quantity dimensions since we remove a "tile" dimension,
         # unlike for tile scatter/gather which retains the same dimensions
         recv_quantity = Quantity(
-            metadata.np.zeros(shape, dtype=metadata.dtype),
+            metadata.np.empty(shape, dtype=metadata.dtype),
             dims=metadata.dims[1:],
             units=metadata.units,
             gt4py_backend=metadata.gt4py_backend,
@@ -473,13 +473,13 @@ class CubedSphereCommunicator(Communicator):
         specifications = []
         for quantity in quantities:
             specification = HaloUpdateSpec(
-                n_halo_points=n_points,
+                n_points=n_points,
                 shape=quantity.data.shape,
                 strides=quantity.data.strides,
                 itemsize=quantity.data.itemsize,
-                origin=quantity.metadata.origin,
-                extent=quantity.metadata.extent,
-                dims=quantity.metadata.dims,
+                origin=quantity.origin,
+                extent=quantity.extent,
+                dims=quantity.dims,
                 numpy_module=self._maybe_force_cpu(quantity.np),
                 dtype=quantity.metadata.dtype,
             )
@@ -558,7 +558,7 @@ class CubedSphereCommunicator(Communicator):
         y_specifications = []
         for x_quantity, y_quantity in zip(x_quantities, y_quantities):
             x_specification = HaloUpdateSpec(
-                n_halo_points=n_points,
+                n_points=n_points,
                 shape=x_quantity.data.shape,
                 strides=x_quantity.data.strides,
                 itemsize=x_quantity.data.itemsize,
@@ -570,7 +570,7 @@ class CubedSphereCommunicator(Communicator):
             )
             x_specifications.append(x_specification)
             y_specification = HaloUpdateSpec(
-                n_halo_points=n_points,
+                n_points=n_points,
                 shape=y_quantity.data.shape,
                 strides=y_quantity.data.strides,
                 itemsize=y_quantity.data.itemsize,
@@ -765,7 +765,7 @@ class CubedSphereCommunicator(Communicator):
     ):
         if len(specifications) == 0:
             raise RuntimeError("Cannot create updater with specifications list")
-        if specifications[0].n_halo_points == 0:
+        if specifications[0].n_points == 0:
             raise ValueError("cannot perform a halo update on zero halo points")
         return HaloUpdater.from_scalar_specifications(
             self,
@@ -785,10 +785,7 @@ class CubedSphereCommunicator(Communicator):
     ):
         if len(specifications_x) == 0 and len(specifications_y) == 0:
             raise RuntimeError("Cannot create updater with empty specifications list")
-        if (
-            specifications_x[0].n_halo_points == 0
-            and specifications_y[0].n_halo_points == 0
-        ):
+        if specifications_x[0].n_points == 0 and specifications_y[0].n_points == 0:
             raise ValueError("Cannot perform a halo update on zero halo points")
         return HaloUpdater.from_vector_specifications(
             self,

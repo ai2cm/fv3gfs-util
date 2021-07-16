@@ -210,7 +210,7 @@ def test_data_transformer_allocate(quantity, n_halos):
     )
 
     specification = HaloUpdateSpec(
-        n_halo_points=n_halos,
+        n_points=n_halos,
         shape=quantity.data.shape,
         strides=quantity.data.strides,
         itemsize=quantity.data.itemsize,
@@ -297,7 +297,7 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     }
 
     specification = HaloUpdateSpec(
-        n_halo_points=n_halos,
+        n_points=n_halos,
         shape=quantity.data.shape,
         strides=quantity.data.strides,
         itemsize=quantity.data.itemsize,
@@ -335,8 +335,8 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     data_transformer.finalize()
 
     # From the copy of the original quantity we rotate data
-    # according to the rotation & slice and insert them bak
-    # this reproduce the multi-buffer strategy
+    # according to the rotation & slice and insert them back
+    # this reproduces the multi-buffer strategy
     rotated = rotate_scalar_data(
         original_quantity.data[N_edge_boundaries[rotation][0]],
         original_quantity.dims,
@@ -379,7 +379,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
     }
 
     specification_x = HaloUpdateSpec(
-        n_halo_points=n_halos,
+        n_points=n_halos,
         shape=x_quantity.data.shape,
         strides=x_quantity.data.strides,
         itemsize=x_quantity.data.itemsize,
@@ -390,7 +390,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         dtype=x_quantity.metadata.dtype,
     )
     specification_y = HaloUpdateSpec(
-        n_halo_points=n_halos,
+        n_points=n_halos,
         shape=y_quantity.data.shape,
         strides=y_quantity.data.strides,
         itemsize=y_quantity.data.itemsize,

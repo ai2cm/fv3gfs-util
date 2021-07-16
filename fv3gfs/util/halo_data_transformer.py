@@ -25,7 +25,7 @@ except ImportError:
 class HaloUpdateSpec:
     """Describe the memory to be exchanged, including size of the halo."""
 
-    n_halo_points: int
+    n_points: int
     strides: Tuple[int]
     itemsize: int
     shape: Tuple[int]
@@ -571,8 +571,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             )
         )
 
-        # Their is a lazy caching mechanism here because in our use case
-        # (halo exchange) their is a limited set of index patterns but a
+        # We use a lazy caching mechanism here because in our use case
+        # (halo exchange) there is a limited set of index patterns but a
         # large number of exchanges.
         if key not in INDICES_GPU_CACHE.keys():
             _build_flatten_indices(
