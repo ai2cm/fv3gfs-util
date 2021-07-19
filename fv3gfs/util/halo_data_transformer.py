@@ -38,13 +38,6 @@ class HaloUpdateSpec:
 
 
 # ------------------------------------------------------------------------
-# Temporary "safe" code path
-#  _CODE_PATH_DEVICE_WIDE_SYNC: turns off streaming and issue a single
-#   device wide synchronization call instead
-
-_CODE_PATH_DEVICE_WIDE_SYNC = False
-
-# ------------------------------------------------------------------------
 # Simple pool of streams to lower the driver pressure
 # Use _pop/_push_stream to manipulate the pool
 
@@ -266,7 +259,6 @@ class HaloDataTransformer(abc.ABC):
             f"Quantity module {np_module} has no HaloDataTransformer implemented"
         )
 
-    @abc.abstractclassmethod
     def get_unpack_buffer(self) -> Buffer:
         """Retrieve unpack buffer.
 
@@ -276,7 +268,6 @@ class HaloDataTransformer(abc.ABC):
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
         return self._unpack_buffer
 
-    @abc.abstractclassmethod
     def get_pack_buffer(self) -> Buffer:
         """Retrieve pack buffer.
 
@@ -541,6 +532,11 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     compute an array of index into the original memory.
     """
 
+    # Temporary "safe" code path
+    #  _CODE_PATH_DEVICE_WIDE_SYNC: turns off streaming and issue a single
+    #   device wide synchronization call instead
+    _CODE_PATH_DEVICE_WIDE_SYNC = False
+
     @dataclass
     class _CuKernelArgs:
         """All arguments required for the CUDA kernels."""
@@ -636,7 +632,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 )
 
     def synchronize(self):
-        if _CODE_PATH_DEVICE_WIDE_SYNC:
+        if self._CODE_PATH_DEVICE_WIDE_SYNC:
             self._safe_synchronize()
         else:
             self._streamed_synchronize()
@@ -648,9 +644,11 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _safe_synchronize(self):
         device_synchronize()
 
-    def _use_stream(self, stream):
-        if not _CODE_PATH_DEVICE_WIDE_SYNC:
-            stream.use()
+    def _get_stream(self, stream) -> "cp.cuda.stream":
+        if self._CODE_PATH_DEVICE_WIDE_SYNC:
+            return cp.cuda.Stream.null
+        else:
+            return stream
 
     def async_pack(
         self,
@@ -693,31 +691,30 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             cu_kernel_args = self._cu_kernel_args[info_x._id]
 
             # Use private stream
-            self._use_stream(cu_kernel_args.stream)
+            with self._get_stream(cu_kernel_args.stream):
+                if quantity.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            if quantity.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+                # Launch kernel
+                blocks = 128
+                grid_x = (info_x._pack_buffer_size // blocks) + 1
+                if pack_scalar_f64_kernel is None:
+                    RuntimeError("CUDA nvrtc failed")
+                else:
+                    pack_scalar_f64_kernel(
+                        (blocks,),
+                        (grid_x,),
+                        (
+                            quantity.data[:],  # source_array
+                            cu_kernel_args.x_send_indices,  # indices
+                            info_x._pack_buffer_size,  # nIndex
+                            offset,
+                            self._pack_buffer.array,
+                        ),
+                    )
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (info_x._pack_buffer_size // blocks) + 1
-            if pack_scalar_f64_kernel is None:
-                RuntimeError("CUDA nvrtc failed")
-            else:
-                pack_scalar_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        quantity.data[:],  # source_array
-                        cu_kernel_args.x_send_indices,  # indices
-                        info_x._pack_buffer_size,  # nIndex
-                        offset,
-                        self._pack_buffer.array,
-                    ),
-                )
-
-            # Next transformer offset into send buffer
-            offset += info_x._pack_buffer_size
+                # Next transformer offset into send buffer
+                offset += info_x._pack_buffer_size
 
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
@@ -750,38 +747,38 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             cu_kernel_args = self._cu_kernel_args[info_x._id]
 
             # Use private stream
-            self._use_stream(cu_kernel_args.stream)
+            with self._get_stream(cu_kernel_args.stream):
 
-            # Buffer sizes
-            transformer_size = info_x._pack_buffer_size + info_y._pack_buffer_size
+                # Buffer sizes
+                transformer_size = info_x._pack_buffer_size + info_y._pack_buffer_size
 
-            if quantity_x.metadata.dtype != np.float64:
-                raise RuntimeError(f"Kernel requires f64 given {np.float64}")
+                if quantity_x.metadata.dtype != np.float64:
+                    raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (transformer_size // blocks) + 1
-            if pack_vector_f64_kernel is None:
-                RuntimeError("CUDA nvrtc failed")
-            else:
-                pack_vector_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        quantity_x.data[:],  # source_array_x
-                        quantity_y.data[:],  # source_array_y
-                        cu_kernel_args.x_send_indices,  # indices_x
-                        cu_kernel_args.y_send_indices,  # indices_y
-                        info_x._pack_buffer_size,  # nIndex_x
-                        info_y._pack_buffer_size,  # nIndex_y
-                        offset,
-                        (-info_x.pack_clockwise_rotation) % 4,  # rotation
-                        self._pack_buffer.array,
-                    ),
-                )
+                # Launch kernel
+                blocks = 128
+                grid_x = (transformer_size // blocks) + 1
+                if pack_vector_f64_kernel is None:
+                    RuntimeError("CUDA nvrtc failed")
+                else:
+                    pack_vector_f64_kernel(
+                        (blocks,),
+                        (grid_x,),
+                        (
+                            quantity_x.data[:],  # source_array_x
+                            quantity_y.data[:],  # source_array_y
+                            cu_kernel_args.x_send_indices,  # indices_x
+                            cu_kernel_args.y_send_indices,  # indices_y
+                            info_x._pack_buffer_size,  # nIndex_x
+                            info_y._pack_buffer_size,  # nIndex_y
+                            offset,
+                            (-info_x.pack_clockwise_rotation) % 4,  # rotation
+                            self._pack_buffer.array,
+                        ),
+                    )
 
-            # Next transformer offset into send buffer
-            offset += transformer_size
+                # Next transformer offset into send buffer
+                offset += transformer_size
 
     def async_unpack(
         self,
@@ -808,30 +805,31 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         assert isinstance(self._unpack_buffer, Buffer)  # e.g. allocate happened
         offset = 0
         for quantity, info_x in zip(quantities, self._infos_x):
+            cu_kernel_args = self._cu_kernel_args[info_x._id]
+
             # Use private stream
-            kernel_args = self._cu_kernel_args[info_x._id]
-            self._use_stream(kernel_args.stream)
+            with self._get_stream(cu_kernel_args.stream):
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (info_x._unpack_buffer_size // blocks) + 1
-            if unpack_scalar_f64_kernel is None:
-                RuntimeError("CUDA nvrtc failed")
-            else:
-                unpack_scalar_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        self._unpack_buffer.array,  # source_buffer
-                        kernel_args.x_recv_indices,  # indices
-                        info_x._unpack_buffer_size,  # nIndex
-                        offset,
-                        quantity.data[:],  # destination_array
-                    ),
-                )
+                # Launch kernel
+                blocks = 128
+                grid_x = (info_x._unpack_buffer_size // blocks) + 1
+                if unpack_scalar_f64_kernel is None:
+                    RuntimeError("CUDA nvrtc failed")
+                else:
+                    unpack_scalar_f64_kernel(
+                        (blocks,),
+                        (grid_x,),
+                        (
+                            self._unpack_buffer.array,  # source_buffer
+                            cu_kernel_args.x_recv_indices,  # indices
+                            info_x._unpack_buffer_size,  # nIndex
+                            offset,
+                            quantity.data[:],  # destination_array
+                        ),
+                    )
 
-            # Next transformer offset into recv buffer
-            offset += info_x._unpack_buffer_size
+                # Next transformer offset into recv buffer
+                offset += info_x._unpack_buffer_size
 
     def _opt_unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
@@ -856,36 +854,37 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             if quantity_x.metadata.dtype != np.float64:
                 raise RuntimeError(f"Kernel requires f64 given {np.float64}")
 
-            # Use private stream
             cu_kernel_args = self._cu_kernel_args[info_x._id]
-            self._use_stream(cu_kernel_args.stream)
 
-            # Buffer sizes
-            edge_size = info_x._unpack_buffer_size + info_y._unpack_buffer_size
+            # Use private stream
+            with self._get_stream(cu_kernel_args.stream):
 
-            # Launch kernel
-            blocks = 128
-            grid_x = (edge_size // blocks) + 1
-            if unpack_vector_f64_kernel is None:
-                RuntimeError("CUDA nvrtc failed")
-            else:
-                unpack_vector_f64_kernel(
-                    (blocks,),
-                    (grid_x,),
-                    (
-                        self._unpack_buffer.array,
-                        cu_kernel_args.x_recv_indices,  # indices_x
-                        cu_kernel_args.y_recv_indices,  # indices_y
-                        info_x._unpack_buffer_size,  # nIndex_x
-                        info_y._unpack_buffer_size,  # nIndex_y
-                        offset,
-                        quantity_x.data[:],  # destination_array_x
-                        quantity_y.data[:],  # destination_array_y
-                    ),
-                )
+                # Buffer sizes
+                edge_size = info_x._unpack_buffer_size + info_y._unpack_buffer_size
 
-            # Next transformer offset into send buffer
-            offset += edge_size
+                # Launch kernel
+                blocks = 128
+                grid_x = (edge_size // blocks) + 1
+                if unpack_vector_f64_kernel is None:
+                    RuntimeError("CUDA nvrtc failed")
+                else:
+                    unpack_vector_f64_kernel(
+                        (blocks,),
+                        (grid_x,),
+                        (
+                            self._unpack_buffer.array,
+                            cu_kernel_args.x_recv_indices,  # indices_x
+                            cu_kernel_args.y_recv_indices,  # indices_y
+                            info_x._unpack_buffer_size,  # nIndex_x
+                            info_y._unpack_buffer_size,  # nIndex_y
+                            offset,
+                            quantity_x.data[:],  # destination_array_x
+                            quantity_y.data[:],  # destination_array_y
+                        ),
+                    )
+
+                # Next transformer offset into send buffer
+                offset += edge_size
 
     def finalize(self):
         # Synchronize all work
