@@ -1,3 +1,4 @@
+from fv3gfs.util.buffer import BUFFER_CACHE
 import pytest
 import fv3gfs.util
 import copy
@@ -547,3 +548,89 @@ def get_horizontal_dims(dims):
     else:
         raise ValueError(f"no y dimension in {dims}")
     return y_dim, x_dim
+
+
+@pytest.mark.parametrize(
+    "layout, n_points, n_points_update, n_buffer",
+    [((1, 1), 2, "more", 0)],
+    indirect=True,
+)
+def test_halo_updater_stability(
+    zeros_quantity_list,
+    communicator_list,
+    n_points_update,
+    n_points,
+    numpy,
+    subtests,
+    boundary_dict,
+    ranks_per_tile,
+):
+    """
+    Test that that halo_updater is stable both in data exchange and that the
+    internal buffers are re-used properly
+    """
+    BUFFER_CACHE.clear()
+    halo_updaters = []
+    for communicator, quantity in zip(communicator_list, zeros_quantity_list):
+        specification = fv3gfs.util.HaloUpdateSpec(
+            n_points,
+            quantity.data.strides,
+            quantity.data.itemsize,
+            quantity.data.shape,
+            quantity.origin,
+            quantity.extent,
+            quantity.dims,
+            quantity.np,
+            quantity.metadata.dtype,
+        )
+        halo_updater = fv3gfs.util.HaloUpdater.from_scalar_specifications(
+            comm=communicator,
+            numpy_like_module=quantity.np,
+            specifications=[specification],
+            boundaries=communicator.boundaries.values(),
+            tag=0,
+        )
+        halo_updaters.append(halo_updater)
+
+    # Caches must be created before we run (e.g. cache line != 0
+    # and no caches in cache line since they are used)
+    assert len(BUFFER_CACHE) == 1
+    assert len(next(iter(BUFFER_CACHE.values()))) == 0
+
+    # First run
+    for halo_updater in halo_updaters:
+        halo_updater.start([quantity])
+    for halo_updater in halo_updaters:
+        halo_updater.wait()
+
+    # Copy the exchanged buffer and trigger multiple runs
+    # The buffer should stay stable since we are exchanging the same information
+    exchanged_once_quantity = copy.deepcopy(quantity)
+    for halo_updater in halo_updaters:
+        halo_updater.start([quantity])
+    for halo_updater in halo_updaters:
+        halo_updater.wait()
+    for halo_updater in halo_updaters:
+        halo_updater.start([quantity])
+    for halo_updater in halo_updaters:
+        halo_updater.wait()
+    assert (quantity.data == exchanged_once_quantity.data).all()
+
+    # All caches are still in use
+    assert len(BUFFER_CACHE) == 1
+    assert len(next(iter(BUFFER_CACHE.values()))) == 0
+
+    # Manually run __del__ to force updater cleanup
+    # This should recache all the buffers
+    for halo_updater in halo_updaters:
+        halo_updater.__del__()
+    halo_updaters = []
+
+    # With the layout constrained we will have
+    # 6 (ranks) * 4 (boundaries) * 2 (send&recv) buffers recached.
+    assert len(BUFFER_CACHE) == 1
+    assert (
+        len(next(iter(BUFFER_CACHE.values())))
+        == len(communicator_list) * len(communicator.boundaries.values()) * 2
+    )
+
