@@ -14,6 +14,7 @@ from .cuda_kernels import (
     unpack_scalar_f64_kernel,
     unpack_vector_f64_kernel,
 )
+import abc
 
 try:
     import cupy as cp
@@ -67,7 +68,7 @@ def _push_stream(stream: "cp.cuda.Stream"):
 # a slice is not hashable. getting a string from
 # Tuple(slices, rotation, shape, strides, itemsize) e.g. # noqa
 # str(Tuple[Any, int, Tuple[int], Tuple[int], int]) # noqa
-INDICES_GPU_CACHE: Dict[str, "cp.ndarray"] = {}
+INDICES_CACHE: Dict[str, "cp.ndarray"] = {}
 
 
 def _build_flatten_indices(
@@ -79,7 +80,7 @@ def _build_flatten_indices(
     itemsize: int,
     rotate: bool,
     rotation: int,
-):
+) -> "cp.ndarray":
     """Build an array of indexing from a slice & memory description to build an indexation into the "flatten" memory.
     
     Go from a memory layout (strides, itemsize, shape) and slices into it to a
@@ -111,15 +112,14 @@ def _build_flatten_indices(
         # to get the right final orientation. We apply those rotations to the
         # indices here to prepare for a straightforward copy in cu kernel
         arr_indices = rotate_scalar_data(arr_indices, dims, cp, -rotation)
-    arr_indices_gpu = cp.asarray(arr_indices.flatten(order="C"))
-    INDICES_GPU_CACHE[key] = arr_indices_gpu
+    return cp.asarray(arr_indices.flatten(order="C"))
 
 
 # ------------------------------------------------------------------------
 # HaloDataTransformer helpers
 
 
-def _slices_length(slices: Tuple[slice]) -> int:
+def _slices_size(slices: Tuple[slice]) -> int:
     """Compute linear size from slices."""
     length = 1
     for s in slices:
@@ -132,6 +132,10 @@ def _slices_length(slices: Tuple[slice]) -> int:
 class HaloExchangeData:
     """Memory description of the data exchanged.
     
+    The data stored here target a single exchange, with an optional
+    rotation to give prior to pack. Slices are tupled following the
+    convention of one slice per dimension
+
     Args:
         specification: memory layout of the data
         pack_slices: indexing to pack
@@ -146,8 +150,8 @@ class HaloExchangeData:
 
     def __post_init__(self):
         self._id = uuid1()
-        self._pack_buffer_size = _slices_length(self.pack_slices)
-        self._unpack_buffer_size = _slices_length(self.unpack_slices)
+        self._pack_buffer_size = _slices_size(self.pack_slices)
+        self._unpack_buffer_size = _slices_size(self.unpack_slices)
 
 
 class _HaloDataTransformerType(Enum):
@@ -162,7 +166,7 @@ class _HaloDataTransformerType(Enum):
 # HaloDataTransformer classes
 
 
-class HaloDataTransformer:
+class HaloDataTransformer(abc.ABC):
     """Transform data to exchange in a format optimized for network communication.
 
     Current strategy: pack/unpack multiple nD array into/from a single buffer.
@@ -262,6 +266,7 @@ class HaloDataTransformer:
             f"Quantity module {np_module} has no HaloDataTransformer implemented"
         )
 
+    @abc.abstractclassmethod
     def get_unpack_buffer(self) -> Buffer:
         """Retrieve unpack buffer.
 
@@ -271,6 +276,7 @@ class HaloDataTransformer:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
         return self._unpack_buffer
 
+    @abc.abstractclassmethod
     def get_pack_buffer(self) -> Buffer:
         """Retrieve pack buffer.
 
@@ -305,6 +311,7 @@ class HaloDataTransformer:
         """Check if the buffers are ready for communication."""
         return self._pack_buffer is not None and self._unpack_buffer is not None
 
+    @abc.abstractclassmethod
     def async_pack(
         self,
         quantities_x: List[Quantity],
@@ -316,6 +323,7 @@ class HaloDataTransformer:
         The send Buffer is held by this class."""
         raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
+    @abc.abstractclassmethod
     def async_unpack(
         self,
         quantities_x: List[Quantity],
@@ -326,6 +334,7 @@ class HaloDataTransformer:
         Implementation DOESN'T HAVE TO guarantee transfer is done."""
         raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
+    @abc.abstractclassmethod
     def finalize(self):
         """Finalize operations after unpack.
 
@@ -333,6 +342,7 @@ class HaloDataTransformer:
         Implementation should return recv & send Buffers to the cache for reuse."""
         raise NotImplementedError("Did you call HaloDataTransformer.get()?")
 
+    @abc.abstractclassmethod
     def synchronize(self):
         """Synchronize all operations.
 
@@ -380,7 +390,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         assert isinstance(self._pack_buffer, Buffer)  # e.g. allocate happened
         offset = 0
         for quantity, info_x in zip(quantities, self._infos_x):
-            data_size = _slices_length(info_x.pack_slices)
+            data_size = _slices_size(info_x.pack_slices)
             # sending data across the boundary will rotate the data
             # n_clockwise_rotations times, due to the difference in axis orientation.\
             # Thus we rotate that number of times counterclockwise before sending,
@@ -469,7 +479,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
         offset = 0
         for quantity, info_x in zip(quantities, self._infos_x):
             quantity_view = quantity.data[info_x.unpack_slices]
-            data_size = _slices_length(info_x.unpack_slices)
+            data_size = _slices_size(info_x.unpack_slices)
             self._unpack_buffer.assign_to(
                 quantity_view,
                 buffer_slice=np.index_exp[offset : offset + data_size],
@@ -496,7 +506,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             quantities_x, quantities_y, self._infos_x, self._infos_y
         ):
             quantity_view = quantity_x.data[info_x.unpack_slices]
-            data_size = _slices_length(info_x.unpack_slices)
+            data_size = _slices_size(info_x.unpack_slices)
             self._unpack_buffer.assign_to(
                 quantity_view,
                 buffer_slice=np.index_exp[offset : offset + data_size],
@@ -504,7 +514,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             )
             offset += data_size
             quantity_view = quantity_y.data[info_y.unpack_slices]
-            data_size = _slices_length(info_y.unpack_slices)
+            data_size = _slices_size(info_y.unpack_slices)
             self._unpack_buffer.assign_to(
                 quantity_view,
                 buffer_slice=np.index_exp[offset : offset + data_size],
@@ -574,8 +584,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         # We use a lazy caching mechanism here because in our use case
         # (halo exchange) there is a limited set of index patterns but a
         # large number of exchanges.
-        if key not in INDICES_GPU_CACHE.keys():
-            _build_flatten_indices(
+        if key not in INDICES_CACHE.keys():
+            INDICES_CACHE[key] = _build_flatten_indices(
                 key,
                 exchange_data.specification.shape,
                 slices,
@@ -587,7 +597,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             )
 
         # We don't return a copy since the indices are read-only in the algorithm
-        return INDICES_GPU_CACHE[key]
+        return INDICES_CACHE[key]
 
     def _compile(self):
         # Super to get buffer allocation
@@ -691,17 +701,20 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             # Launch kernel
             blocks = 128
             grid_x = (info_x._pack_buffer_size // blocks) + 1
-            pack_scalar_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    quantity.data[:],  # source_array
-                    cu_kernel_args.x_send_indices,  # indices
-                    info_x._pack_buffer_size,  # nIndex
-                    offset,
-                    self._pack_buffer.array,
-                ),
-            )
+            if pack_scalar_f64_kernel is None:
+                RuntimeError("CUDA nvrtc failed")
+            else:
+                pack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        quantity.data[:],  # source_array
+                        cu_kernel_args.x_send_indices,  # indices
+                        info_x._pack_buffer_size,  # nIndex
+                        offset,
+                        self._pack_buffer.array,
+                    ),
+                )
 
             # Next transformer offset into send buffer
             offset += info_x._pack_buffer_size
@@ -748,21 +761,24 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             # Launch kernel
             blocks = 128
             grid_x = (transformer_size // blocks) + 1
-            pack_vector_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    quantity_x.data[:],  # source_array_x
-                    quantity_y.data[:],  # source_array_y
-                    cu_kernel_args.x_send_indices,  # indices_x
-                    cu_kernel_args.y_send_indices,  # indices_y
-                    info_x._pack_buffer_size,  # nIndex_x
-                    info_y._pack_buffer_size,  # nIndex_y
-                    offset,
-                    (-info_x.pack_clockwise_rotation) % 4,  # rotation
-                    self._pack_buffer.array,
-                ),
-            )
+            if pack_vector_f64_kernel is None:
+                RuntimeError("CUDA nvrtc failed")
+            else:
+                pack_vector_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        quantity_x.data[:],  # source_array_x
+                        quantity_y.data[:],  # source_array_y
+                        cu_kernel_args.x_send_indices,  # indices_x
+                        cu_kernel_args.y_send_indices,  # indices_y
+                        info_x._pack_buffer_size,  # nIndex_x
+                        info_y._pack_buffer_size,  # nIndex_y
+                        offset,
+                        (-info_x.pack_clockwise_rotation) % 4,  # rotation
+                        self._pack_buffer.array,
+                    ),
+                )
 
             # Next transformer offset into send buffer
             offset += transformer_size
@@ -799,17 +815,20 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             # Launch kernel
             blocks = 128
             grid_x = (info_x._unpack_buffer_size // blocks) + 1
-            unpack_scalar_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    self._unpack_buffer.array,  # source_buffer
-                    kernel_args.x_recv_indices,  # indices
-                    info_x._unpack_buffer_size,  # nIndex
-                    offset,
-                    quantity.data[:],  # destination_array
-                ),
-            )
+            if unpack_scalar_f64_kernel is None:
+                RuntimeError("CUDA nvrtc failed")
+            else:
+                unpack_scalar_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        self._unpack_buffer.array,  # source_buffer
+                        kernel_args.x_recv_indices,  # indices
+                        info_x._unpack_buffer_size,  # nIndex
+                        offset,
+                        quantity.data[:],  # destination_array
+                    ),
+                )
 
             # Next transformer offset into recv buffer
             offset += info_x._unpack_buffer_size
@@ -847,20 +866,23 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             # Launch kernel
             blocks = 128
             grid_x = (edge_size // blocks) + 1
-            unpack_vector_f64_kernel(
-                (blocks,),
-                (grid_x,),
-                (
-                    self._unpack_buffer.array,
-                    cu_kernel_args.x_recv_indices,  # indices_x
-                    cu_kernel_args.y_recv_indices,  # indices_y
-                    info_x._unpack_buffer_size,  # nIndex_x
-                    info_y._unpack_buffer_size,  # nIndex_y
-                    offset,
-                    quantity_x.data[:],  # destination_array_x
-                    quantity_y.data[:],  # destination_array_y
-                ),
-            )
+            if unpack_vector_f64_kernel is None:
+                RuntimeError("CUDA nvrtc failed")
+            else:
+                unpack_vector_f64_kernel(
+                    (blocks,),
+                    (grid_x,),
+                    (
+                        self._unpack_buffer.array,
+                        cu_kernel_args.x_recv_indices,  # indices_x
+                        cu_kernel_args.y_recv_indices,  # indices_y
+                        info_x._unpack_buffer_size,  # nIndex_x
+                        info_y._unpack_buffer_size,  # nIndex_y
+                        offset,
+                        quantity_x.data[:],  # destination_array_x
+                        quantity_y.data[:],  # destination_array_y
+                    ),
+                )
 
             # Next transformer offset into send buffer
             offset += edge_size

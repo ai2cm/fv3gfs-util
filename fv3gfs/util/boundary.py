@@ -46,7 +46,7 @@ class Boundary:
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice_from_spec(specification, interior=True)
+        return self._slice(specification, interior=True)
 
     def recv_slice(self, specification: HaloUpdateSpec) -> Tuple[slice]:
         """Return the index slices which should be received at this boundary.
@@ -58,28 +58,14 @@ class Boundary:
         Returns:
             A tuple of slices (one per dimensions)
         """
-        return self._slice_from_spec(specification, interior=False)
+        return self._slice(specification, interior=False)
 
-    def _slice_from_spec(
-        self, specification: HaloUpdateSpec, interior: bool
-    ) -> Tuple[slice]:
+    def _slice(self, specification: HaloUpdateSpec, interior: bool) -> Tuple[slice]:
         """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
         
         Args:
             specification: memory information on this halo, including halo size
 
-        Return:
-            A tuple of slices (one per dimensions)
-        """
-        raise NotImplementedError()
-
-    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
-        """Returns a tuple of slices (one per dimensions) indexing the data to be exchange.
-
-        Args:
-            quantity: Quantity to slice, the memory information is used
-            n_points: size of the halo
-        
         Return:
             A tuple of slices (one per dimensions)
         """
@@ -104,11 +90,7 @@ class SimpleBoundary(Boundary):
     boundary_type: int
 
     def _view(self, quantity: Quantity, n_points: int, interior: bool):
-        boundary_slice = self._slice(quantity, n_points, interior)
-        return quantity.data[tuple(boundary_slice)]
-
-    def _slice(self, quantity: Quantity, n_points: int, interior: bool) -> Tuple[slice]:
-        return get_boundary_slice(
+        boundary_slice = get_boundary_slice(
             quantity.dims,
             quantity.origin,
             quantity.extent,
@@ -117,10 +99,9 @@ class SimpleBoundary(Boundary):
             n_points,
             interior,
         )
+        return quantity.data[tuple(boundary_slice)]
 
-    def _slice_from_spec(
-        self, specification: HaloUpdateSpec, interior: bool
-    ) -> Tuple[slice]:
+    def _slice(self, specification: HaloUpdateSpec, interior: bool) -> Tuple[slice]:
         return get_boundary_slice(
             specification.dims,
             specification.origin,

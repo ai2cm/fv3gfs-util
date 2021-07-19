@@ -21,7 +21,10 @@ class HaloUpdater:
       from a list of memory specifications
     - update and start/wait trigger the halo exchange
     - the class creates a "pattern" of exchange that can fit any memory given to do/start
-    - temporary reference is helf between start and wait
+    - temporary references to the Quanitites are held between start and wait
+    - Optional: finalize_on_wait allows for a behavior that flushes buffers at every wait call
+        and re-fetch buffers at every start. This allows to keep the API behavior consistent with
+        previous version when using Communicator.start_halo_update/wait
     """
 
     def __init__(

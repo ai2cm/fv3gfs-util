@@ -4,21 +4,11 @@ except ImportError:
     cp = None
 
 
-def _build_pack_scalar_f64_kernel():
-    """Pack into o_destinationBuffer data from i_sourceArray.
-    
-    The indexation into i_sourceArray is stored in i_indexes.
-    i_offset is the offset in the destination buffer.
-    i_nIndex allows to protect from out-of-bound read in kernel.
-
-    tid is the global unique index calculated from the CUDA scheduler inner data.
-    """
-
-    if cp is None:
-        return None
-    else:
-        return cp.RawKernel(
-            r"""
+pack_scalar_f64_kernel = (
+    None
+    if cp is None
+    else cp.RawKernel(
+        r"""
         extern "C" __global__
         void pack_scalar_f64(const double* i_sourceArray,
                             const int* i_indexes,
@@ -36,24 +26,24 @@ def _build_pack_scalar_f64_kernel():
         }
 
         """,
-            "pack_scalar_f64",
-        )
-
-
-def _build_unpack_scalar_f64_kernel():
-    """Unpack into o_destinationArray data from i_sourceBuffer.
+        "pack_scalar_f64",
+    )
+)
+"""Pack into o_destinationBuffer data from i_sourceArray.
     
-    The indexation into o_destinationArray is stored in i_indexes.
-    i_offset is the offset in the source buffer.
+    The indexation into i_sourceArray is stored in i_indexes.
+    i_offset is the offset in the destination buffer.
     i_nIndex allows to protect from out-of-bound read in kernel.
 
     tid is the global unique index calculated from the CUDA scheduler inner data.
-    """
-    if cp is None:
-        return None
-    else:
-        return cp.RawKernel(
-            r"""
+"""
+
+
+unpack_scalar_f64_kernel = (
+    None
+    if cp is None
+    else cp.RawKernel(
+        r"""
             extern "C" __global__
             void unpack_scalar_f64(const double* i_sourceBuffer,
                                 const int* i_indexes,
@@ -69,27 +59,25 @@ def _build_unpack_scalar_f64_kernel():
             }
 
             """,
-            "unpack_scalar_f64",
-        )
+        "unpack_scalar_f64",
+    )
+)
+"""Unpack into o_destinationArray data from i_sourceBuffer.
+
+The indexation into o_destinationArray is stored in i_indexes.
+i_offset is the offset in the source buffer.
+i_nIndex allows to protect from out-of-bound read in kernel.
+
+tid is the global unique index calculated from the CUDA scheduler inner data.
+"""
 
 
-def _build_pack_vector_f64_kernel():
-    """Pack into o_destinationBuffer data from i_sourceArrayX/Y.
-    
-    The indexation into i_sourceArrayX/Y is stored in i_indexesX/Y.
-    i_offset is the offset in the destination buffer.
-    i_nIndexX/Y allows to protect from out-of-bound read in kernel.
-    i_rotate refers to the rotation that needs to be applied prior to assignment.
-
-    tid is the global unique index calculated from the CUDA scheduler inner data.
-    """
-
-    # Expect rotate >= 0 in [0:4[
-    if cp is None:
-        return None
-    else:
-        return cp.RawKernel(
-            r"""
+# Expect rotate >= 0 in [0:4[
+pack_vector_f64_kernel = (
+    None
+    if cp is None
+    else cp.RawKernel(
+        r"""
     extern "C" __global__
     void pack_vector_f64(const double* i_sourceArrayX,
                         const double* i_sourceArrayY,
@@ -141,24 +129,25 @@ def _build_pack_vector_f64_kernel():
     }
 
     """,
-            "pack_vector_f64",
-        )
-
-
-def _build_unpack_vector_f64_kernel():
-    """Unpack into o_destinationArrayX/Y data from i_sourceBuffer.
+        "pack_vector_f64",
+    )
+)
+"""Pack into o_destinationBuffer data from i_sourceArrayX/Y.
     
-    The indexation into o_destinationArrayX/Y is stored in i_indexesX/Y.
-    i_offset is the offset in the source buffer.
+    The indexation into i_sourceArrayX/Y is stored in i_indexesX/Y.
+    i_offset is the offset in the destination buffer.
     i_nIndexX/Y allows to protect from out-of-bound read in kernel.
+    i_rotate refers to the rotation that needs to be applied prior to assignment.
 
     tid is the global unique index calculated from the CUDA scheduler inner data.
-    """
-    if cp is None:
-        return None
-    else:
-        return cp.RawKernel(
-            r"""
+"""
+
+
+unpack_vector_f64_kernel = (
+    None
+    if cp is None
+    else cp.RawKernel(
+        r"""
         extern "C" __global__
         void unpack_vector_f64(const double* i_sourceBuffer,
                             const int* i_indexesX,
@@ -178,11 +167,14 @@ def _build_unpack_vector_f64_kernel():
         }
 
         """,
-            "unpack_vector_f64",
-        )
+        "unpack_vector_f64",
+    )
+)
+"""Unpack into o_destinationArrayX/Y data from i_sourceBuffer.
+    
+    The indexation into o_destinationArrayX/Y is stored in i_indexesX/Y.
+    i_offset is the offset in the source buffer.
+    i_nIndexX/Y allows to protect from out-of-bound read in kernel.
 
-
-pack_scalar_f64_kernel = _build_pack_scalar_f64_kernel()
-unpack_scalar_f64_kernel = _build_unpack_scalar_f64_kernel()
-pack_vector_f64_kernel = _build_pack_vector_f64_kernel()
-unpack_vector_f64_kernel = _build_unpack_vector_f64_kernel()
+    tid is the global unique index calculated from the CUDA scheduler inner data.
+"""
