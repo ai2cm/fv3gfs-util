@@ -633,4 +633,3 @@ def test_halo_updater_stability(
         len(next(iter(BUFFER_CACHE.values())))
         == len(communicator_list) * len(communicator.boundaries.values()) * 2
     )
-
