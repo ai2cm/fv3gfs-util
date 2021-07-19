@@ -279,21 +279,22 @@ def _get_boundaries(quantity, n_halos):
 
 
 def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
-    original_quantity: Quantity = copy.deepcopy(quantity)
+    target_quantity: Quantity = copy.deepcopy(quantity)
 
     send_boundaries, recv_boundaries = _get_boundaries(quantity, n_halos)
-    N_edge_boundaries = {
-        0: (send_boundaries[NORTH], recv_boundaries[SOUTH]),
-        -1: (send_boundaries[NORTH], recv_boundaries[WEST]),
-        -2: (send_boundaries[NORTH], recv_boundaries[NORTH]),
-        -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
-    }
 
     NE_corner_boundaries = {
         0: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHEAST]),
         -1: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHWEST]),
         -2: (send_boundaries[NORTHEAST], recv_boundaries[NORTHWEST]),
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
+    }
+
+    N_edge_boundaries = {
+        0: (send_boundaries[NORTH], recv_boundaries[SOUTH]),
+        -1: (send_boundaries[NORTH], recv_boundaries[WEST]),
+        -2: (send_boundaries[NORTH], recv_boundaries[NORTH]),
+        -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
     }
 
     specification = HaloUpdateSpec(
@@ -338,44 +339,45 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     # according to the rotation & slice and insert them back
     # this reproduces the multi-buffer strategy
     rotated = rotate_scalar_data(
-        original_quantity.data[N_edge_boundaries[rotation][0]],
-        original_quantity.dims,
-        original_quantity.metadata.np,
+        quantity.data[N_edge_boundaries[rotation][0]],
+        quantity.dims,
+        quantity.metadata.np,
         -rotation,
     )
-    original_quantity.data[N_edge_boundaries[rotation][1]] = rotated
+    target_quantity.data[N_edge_boundaries[rotation][1]] = rotated
     rotated = rotate_scalar_data(
-        original_quantity.data[NE_corner_boundaries[rotation][0]],
-        original_quantity.dims,
-        original_quantity.metadata.np,
+        quantity.data[NE_corner_boundaries[rotation][0]],
+        quantity.dims,
+        quantity.metadata.np,
         -rotation,
     )
-    original_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
+    target_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
 
-    assert (original_quantity.data == quantity.data).all()
+    assert (target_quantity.data == quantity.data).all()
     assert data_transformer._pack_buffer is None
     assert data_transformer._unpack_buffer is None
 
 
 def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
-    original_quantity_x = copy.deepcopy(quantity)
-    original_quantity_y = copy.deepcopy(original_quantity_x)
+    targe_quanitty_x = copy.deepcopy(quantity)
+    targe_quanitty_y = copy.deepcopy(targe_quanitty_x)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
 
     send_boundaries, recv_boundaries = _get_boundaries(x_quantity, n_halos)
-    N_edge_boundaries = {
-        0: (send_boundaries[NORTH], recv_boundaries[SOUTH]),
-        -1: (send_boundaries[NORTH], recv_boundaries[WEST]),
-        -2: (send_boundaries[NORTH], recv_boundaries[NORTH]),
-        -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
-    }
 
     NE_corner_boundaries = {
         0: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHEAST]),
         -1: (send_boundaries[NORTHEAST], recv_boundaries[SOUTHWEST]),
         -2: (send_boundaries[NORTHEAST], recv_boundaries[NORTHWEST]),
         -3: (send_boundaries[NORTHEAST], recv_boundaries[NORTHEAST]),
+    }
+
+    N_edge_boundaries = {
+        0: (send_boundaries[NORTH], recv_boundaries[SOUTH]),
+        -1: (send_boundaries[NORTH], recv_boundaries[WEST]),
+        -2: (send_boundaries[NORTH], recv_boundaries[NORTH]),
+        -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
     }
 
     specification_x = HaloUpdateSpec(
@@ -447,25 +449,25 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
     # according to the rotation & slice and insert them bak
     # this reproduce the multi-buffer strategy
     rotated_x, rotated_y = rotate_vector_data(
-        original_quantity_x.data[N_edge_boundaries[rotation][0]],
-        original_quantity_y.data[N_edge_boundaries[rotation][0]],
+        quantity.data[N_edge_boundaries[rotation][0]],
+        quantity.data[N_edge_boundaries[rotation][0]],
         -rotation,
-        original_quantity_x.dims,
-        original_quantity_x.metadata.np,
+        quantity.dims,
+        quantity.metadata.np,
     )
-    original_quantity_x.data[N_edge_boundaries[rotation][1]] = rotated_x
-    original_quantity_y.data[N_edge_boundaries[rotation][1]] = rotated_y
+    targe_quanitty_x.data[N_edge_boundaries[rotation][1]] = rotated_x
+    targe_quanitty_y.data[N_edge_boundaries[rotation][1]] = rotated_y
     rotated_x, rotated_y = rotate_vector_data(
-        original_quantity_x.data[NE_corner_boundaries[rotation][0]],
-        original_quantity_y.data[NE_corner_boundaries[rotation][0]],
+        quantity.data[NE_corner_boundaries[rotation][0]],
+        quantity.data[NE_corner_boundaries[rotation][0]],
         -rotation,
-        original_quantity_x.dims,
-        original_quantity_x.metadata.np,
+        quantity.dims,
+        quantity.metadata.np,
     )
-    original_quantity_x.data[NE_corner_boundaries[rotation][1]] = rotated_x
-    original_quantity_y.data[NE_corner_boundaries[rotation][1]] = rotated_y
+    targe_quanitty_x.data[NE_corner_boundaries[rotation][1]] = rotated_x
+    targe_quanitty_y.data[NE_corner_boundaries[rotation][1]] = rotated_y
 
-    assert (original_quantity_x.data == x_quantity.data).all()
-    assert (original_quantity_y.data == y_quantity.data).all()
+    assert (targe_quanitty_x.data == x_quantity.data).all()
+    assert (targe_quanitty_y.data == y_quantity.data).all()
     assert data_transformer._pack_buffer is None
     assert data_transformer._unpack_buffer is None

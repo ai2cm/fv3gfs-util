@@ -657,7 +657,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     ):
         """Pack the quantities into a single buffer via streamed cuda kernels
         
-        Writes into send_buffer.
+        Writes into self._pack_buffer using self._x_infos and self._y_infos
+        to read the offsets and sizes per quantity.
 
         Args:
             quantities_x: list of quantities to pack. Must fit the specifications given
@@ -674,9 +675,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         else:
             raise RuntimeError(f"Unimplemented {self._type} pack")
 
-    def _opt_pack_scalar(
-        self, quantities: List[Quantity],
-    ):
+    def _opt_pack_scalar(self, quantities: List[Quantity]):
+        """Specialized packing for scalar. See async_pack docs for usage."""
         if __debug__:
             if len(quantities) != len(self._infos_x):
                 raise RuntimeError(
@@ -719,15 +719,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
-        """Unpack the quantities from a single buffer via streamed cuda kernels
-        
-        Reads from recv_buffer.
-
-        Args:
-            quantities_x: list of quantities to unpack. Must fit the specifications given
-            at init time.
-            quantities_y: Same as above but optional, used only for Vector transfer.
-        """
+        """Specialized packing for vectors. See async_pack docs for usage."""
         if __debug__:
             if len(quantities_x) != len(self._infos_x) and len(quantities_y) != len(
                 self._infos_y
@@ -785,6 +777,16 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
     ):
+        """Unpack the quantities from a single buffer via streamed cuda kernels
+        
+        Reads from self._unpack_buffer using self._x_infos and self._y_infos
+        to read the offsets and sizes per quantity.
+
+        Args:
+            quantities_x: list of quantities to unpack. Must fit the specifications given
+            at init time.
+            quantities_y: Same as above but optional, used only for Vector transfer.
+        """
         # Unpack per type
         if self._type == _HaloDataTransformerType.SCALAR:
             self._opt_unpack_scalar(quantities_x)
@@ -795,6 +797,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             raise RuntimeError(f"Unimplemented {self._type} unpack")
 
     def _opt_unpack_scalar(self, quantities: List[Quantity]):
+        """Specialized unpacking for scalars. See async_unpack docs for usage."""
         if __debug__:
             if len(quantities) != len(self._infos_x):
                 raise RuntimeError(
@@ -834,6 +837,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def _opt_unpack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
+        """Specialized unpacking for vectors. See async_unpack docs for usage."""
         if __debug__:
             if len(quantities_x) != len(self._infos_x) and len(quantities_y) != len(
                 self._infos_y
