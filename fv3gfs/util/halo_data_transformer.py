@@ -164,26 +164,25 @@ class HaloDataTransformer(abc.ABC):
     """Transform data to exchange in a format optimized for network communication.
 
     Current strategy: pack/unpack multiple nD array into/from a single buffer.
-    Offers a send and a recv buffer to use for exchanging data.
+    Offers a pack and an unpack buffer to use for communicating data.
 
     The class is responsible for packing & unpacking, not communication.
     Order of operations:
-    - get HaloDataTransformer via get_from_numpy_module
-    (user should re-use the same if it goes to the same destination)
-    - add N transformation with the proper halo specification via add_scalar_specification or
-     add_vector_specification (can't mix and match scalar & vector)
-    - compile the transformer via compile()
-    [From here get_unpack_buffer() is valid]
-    - async_pack
-    - synchronize
-    [From here get_pack_buffer() is valid]
+    - get HaloDataTransformer via get() with N transformation
+      with the proper halo specifications.
+      At the end of get() a _compile() will be triggered, reading
+      the internal buffers.
+    - call async_pack(quantities) to start packing the quantities in the
+      internal buffer.
+    - synchronize() to make sure all operations are finished or use get_pack_buffer()
+      when ready to communicate which will internally call synchronize.
     [... user should communicate the buffers...]
-    - async_unpack
-    - finalize
-    [All buffers are returned to their buffer cache, therefore invalid]
-
-    If the user doesn't want the buffer return to the cache (optimal behavior if the same exchange
-    is to be done multiple times), it can use `synchronize` instead of `finalize`
+    - call async_unpack(quantities) to start unpacking
+    - call synchronize() to finish all the unpacking operations and make sure the quantities
+      passed in async_unpack have been updated.
+    
+    The class will hold onto the buffers up until deletion, where they will be returned to an
+    internal buffer pool.
     """
 
     _pack_buffer: Optional[Buffer]
@@ -249,7 +248,8 @@ class HaloDataTransformer(abc.ABC):
             exchange_descriptors_x: list of memory information describing an exchange.
                 Used for scalar data and the x-component of vectors.
             exchange_descriptors_y: list of memory information describing an exchange.
-                Optional, used for the y-component of vectors only.
+                Optional, used for the y-component of vectors only. If `none` the data will packed
+                as a scalar.
 
         Returns:
             an initialized packed buffer.
