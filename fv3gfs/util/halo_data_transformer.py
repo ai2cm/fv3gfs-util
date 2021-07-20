@@ -374,6 +374,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
 
     def synchronize(self):
         self._pack_buffer.finalize_memory_transfer()
+        self._unpack_buffer.finalize_memory_transfer()
         pass
 
     def async_pack(

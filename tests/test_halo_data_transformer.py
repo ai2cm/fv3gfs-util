@@ -331,6 +331,8 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     data_transformer.get_unpack_buffer().assign_from(
         data_transformer.get_pack_buffer().array
     )
+    data_transformer.async_unpack([quantity, quantity])
+    data_transformer.synchronize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them back
@@ -351,8 +353,6 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     target_quantity.data[NE_corner_boundaries[rotation][1]] = rotated
 
     assert (target_quantity.data == quantity.data).all()
-    assert data_transformer._pack_buffer is None
-    assert data_transformer._unpack_buffer is None
 
 
 def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
@@ -465,5 +465,3 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
 
     assert (targe_quanity_x.data == x_quantity.data).all()
     assert (targe_quanity_y.data == y_quantity.data).all()
-    assert data_transformer._pack_buffer is None
-    assert data_transformer._unpack_buffer is None
