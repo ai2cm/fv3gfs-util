@@ -135,9 +135,6 @@ class HaloUpdater:
         exchange_descriptors_x = defaultdict(list)
         exchange_descriptors_y = defaultdict(list)
         for boundary in boundaries:
-            x_specs = []
-            y_specs = []
-            
             for specification_x, specification_y in zip(
                 specifications_x, specifications_y
             ):
