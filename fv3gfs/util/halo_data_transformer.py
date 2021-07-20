@@ -23,7 +23,7 @@ except ImportError:
 
 
 @dataclass
-class HaloUpdateSpec:
+class QuantityHaloSpec:
     """Describe the memory to be exchanged, including size of the halo."""
 
     n_points: int
@@ -122,7 +122,7 @@ def _slices_size(slices: Tuple[slice, ...]) -> int:
 
 
 @dataclass
-class HaloExchangeData:
+class HaloExchangeSpec:
     """Memory description of the data exchanged.
     
     The data stored here target a single exchange, with an optional
@@ -137,7 +137,7 @@ class HaloExchangeData:
         unpack_slices: indexing to unpack, one slice per dimension
     """
 
-    specification: HaloUpdateSpec
+    specification: QuantityHaloSpec
     pack_slices: Tuple[slice, ...]
     pack_clockwise_rotation: int
     unpack_slices: Tuple[slice, ...]
@@ -188,14 +188,14 @@ class HaloDataTransformer(abc.ABC):
     _pack_buffer: Optional[Buffer]
     _unpack_buffer: Optional[Buffer]
 
-    _infos_x: Tuple[HaloExchangeData, ...]
-    _infos_y: Tuple[HaloExchangeData, ...]
+    _infos_x: Tuple[HaloExchangeSpec, ...]
+    _infos_y: Tuple[HaloExchangeSpec, ...]
 
     def __init__(
         self,
         np_module: NumpyModule,
-        exchange_descriptors_x: Sequence[HaloExchangeData],
-        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeSpec],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeSpec]] = None,
     ) -> None:
         """Init routine.
 
@@ -240,8 +240,8 @@ class HaloDataTransformer(abc.ABC):
     @staticmethod
     def get(
         np_module: NumpyModule,
-        exchange_descriptors_x: Sequence[HaloExchangeData],
-        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeSpec],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeSpec]] = None,
     ) -> "HaloDataTransformer":
         """Construct a module from a numpy-like module.
 
@@ -569,8 +569,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
     def __init__(
         self,
         np_module: NumpyModule,
-        exchange_descriptors_x: Sequence[HaloExchangeData],
-        exchange_descriptors_y: Optional[Sequence[HaloExchangeData]] = None,
+        exchange_descriptors_x: Sequence[HaloExchangeSpec],
+        exchange_descriptors_y: Optional[Sequence[HaloExchangeSpec]] = None,
     ) -> None:
         self._cu_kernel_args: Dict[UUID, HaloDataTransformerGPU._CuKernelArgs] = {}
         super().__init__(
@@ -580,7 +580,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         )
 
     def _flatten_indices(
-        self, exchange_data: HaloExchangeData, slices: Tuple[slice], rotate: bool,
+        self, exchange_data: HaloExchangeSpec, slices: Tuple[slice], rotate: bool,
     ) -> "cp.ndarray":
         """Extract a flat array of indices from the memory layout and the slice.
 

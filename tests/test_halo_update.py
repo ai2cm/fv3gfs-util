@@ -572,7 +572,7 @@ def test_halo_updater_stability(
     BUFFER_CACHE.clear()
     halo_updaters = []
     for communicator, quantity in zip(communicator_list, zeros_quantity_list):
-        specification = fv3gfs.util.HaloUpdateSpec(
+        specification = fv3gfs.util.QuantityHaloSpec(
             n_points,
             quantity.data.strides,
             quantity.data.itemsize,

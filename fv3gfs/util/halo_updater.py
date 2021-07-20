@@ -1,6 +1,6 @@
 from collections import defaultdict
 from .types import NumpyModule, AsyncRequest
-from .halo_data_transformer import HaloDataTransformer, HaloExchangeData, HaloUpdateSpec
+from .halo_data_transformer import HaloDataTransformer, HaloExchangeSpec, QuantityHaloSpec
 from ._timing import Timer, NullTimer
 from .boundary import Boundary
 from typing import Dict, Iterable, List, Optional, TYPE_CHECKING, Tuple
@@ -36,8 +36,8 @@ class HaloUpdater:
         Args:
             comm: communicator responsible for send/recv commands.
             tag: network tag to be used for communication
-            transformers: list of data transformers to pack/unpack before and after
-                communication
+            transformers: mapping from destination rank to transformers used to
+                pack/unpack before and after communication
             timer: timing operations
         """
         self._comm = comm
@@ -66,7 +66,7 @@ class HaloUpdater:
         cls,
         comm: "Communicator",
         numpy_like_module: NumpyModule,
-        specifications: Iterable[HaloUpdateSpec],
+        specifications: Iterable[QuantityHaloSpec],
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
@@ -87,23 +87,19 @@ class HaloUpdater:
 
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        exchange_descriptors = defaultdict(list)
+        transformers: Dict[int, HaloExchangeSpec] = {}
+
         for boundary in boundaries:
             for specification in specifications:
-                exchange_descriptors[boundary.to_rank].append(
-                    HaloExchangeData(
+                transformers[boundary.to_rank] = HaloDataTransformer.get(
+                    numpy_like_module, 
+                    HaloExchangeSpec(
                         specification,
                         boundary.send_slice(specification),
                         boundary.n_clockwise_rotations,
                         boundary.recv_slice(specification),
                     )
                 )
-
-        transformers = {}
-        for rank, exchange_descriptor in exchange_descriptors.items():
-            transformers[rank] = HaloDataTransformer.get(
-                numpy_like_module, exchange_descriptor
-            )
 
         return cls(comm, tag, transformers, timer)
 
@@ -112,8 +108,8 @@ class HaloUpdater:
         cls,
         comm: "Communicator",
         numpy_like_module: NumpyModule,
-        specifications_x: Iterable[HaloUpdateSpec],
-        specifications_y: Iterable[HaloUpdateSpec],
+        specifications_x: Iterable[QuantityHaloSpec],
+        specifications_y: Iterable[QuantityHaloSpec],
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
@@ -124,9 +120,9 @@ class HaloUpdater:
             comm: communicator to post network messages
             numpy_like_module: module implementing numpy API
             specifications_x: specifications to exchange along the x axis.
-                          Length must match y specifications.
+                Length must match y specifications.
             specifications_y: specifications to exchange along the y axis.
-                          Length must match x specifications.
+                Length must match x specifications.
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
             optional_timer: timing of operations.
@@ -139,11 +135,14 @@ class HaloUpdater:
         exchange_descriptors_x = defaultdict(list)
         exchange_descriptors_y = defaultdict(list)
         for boundary in boundaries:
+            x_specs = []
+            y_specs = []
+            
             for specification_x, specification_y in zip(
                 specifications_x, specifications_y
             ):
                 exchange_descriptors_x[boundary.to_rank].append(
-                    HaloExchangeData(
+                    HaloExchangeSpec(
                         specification_x,
                         boundary.send_slice(specification_x),
                         boundary.n_clockwise_rotations,
@@ -151,7 +150,7 @@ class HaloUpdater:
                     )
                 )
                 exchange_descriptors_y[boundary.to_rank].append(
-                    HaloExchangeData(
+                    HaloExchangeSpec(
                         specification_y,
                         boundary.send_slice(specification_y),
                         boundary.n_clockwise_rotations,

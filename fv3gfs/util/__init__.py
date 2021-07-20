@@ -53,7 +53,7 @@ from . import testing
 from .initialization import SubtileGridSizer, GridSizer, QuantityFactory
 from .buffer import array_buffer, send_buffer, recv_buffer, Buffer
 from ._corners import fill_scalar_corners
-from .halo_data_transformer import HaloUpdateSpec
+from .halo_data_transformer import QuantityHaloSpec
 from .halo_updater import HaloUpdater
 
 __version__ = "0.6.0"

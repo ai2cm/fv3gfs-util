@@ -1,4 +1,4 @@
-from .halo_data_transformer import HaloUpdateSpec
+from .halo_data_transformer import QuantityHaloSpec
 from typing import Tuple, Mapping, Optional, Sequence, cast, List, Union
 from .quantity import Quantity, QuantityMetadata
 from .partitioner import CubedSpherePartitioner, TilePartitioner, Partitioner
@@ -472,7 +472,7 @@ class CubedSphereCommunicator(Communicator):
 
         specifications = []
         for quantity in quantities:
-            specification = HaloUpdateSpec(
+            specification = QuantityHaloSpec(
                 n_points=n_points,
                 shape=quantity.data.shape,
                 strides=quantity.data.strides,
@@ -555,7 +555,7 @@ class CubedSphereCommunicator(Communicator):
         x_specifications = []
         y_specifications = []
         for x_quantity, y_quantity in zip(x_quantities, y_quantities):
-            x_specification = HaloUpdateSpec(
+            x_specification = QuantityHaloSpec(
                 n_points=n_points,
                 shape=x_quantity.data.shape,
                 strides=x_quantity.data.strides,
@@ -567,7 +567,7 @@ class CubedSphereCommunicator(Communicator):
                 dtype=x_quantity.metadata.dtype,
             )
             x_specifications.append(x_specification)
-            y_specification = HaloUpdateSpec(
+            y_specification = QuantityHaloSpec(
                 n_points=n_points,
                 shape=y_quantity.data.shape,
                 strides=y_quantity.data.strides,
@@ -756,7 +756,7 @@ class CubedSphereCommunicator(Communicator):
             "returned by start_vector_halo_update"
         )
 
-    def get_scalar_halo_updater(self, specifications: List[HaloUpdateSpec]):
+    def get_scalar_halo_updater(self, specifications: List[QuantityHaloSpec]):
         if len(specifications) == 0:
             raise RuntimeError("Cannot create updater with specifications list")
         if specifications[0].n_points == 0:
@@ -772,8 +772,8 @@ class CubedSphereCommunicator(Communicator):
 
     def get_vector_halo_updater(
         self,
-        specifications_x: List[HaloUpdateSpec],
-        specifications_y: List[HaloUpdateSpec],
+        specifications_x: List[QuantityHaloSpec],
+        specifications_y: List[QuantityHaloSpec],
     ):
         if len(specifications_x) == 0 and len(specifications_y) == 0:
             raise RuntimeError("Cannot create updater with empty specifications list")
