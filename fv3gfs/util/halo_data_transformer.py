@@ -143,9 +143,9 @@ class HaloExchangeData:
     unpack_slices: Tuple[slice, ...]
 
     def __post_init__(self):
-        self._id = uuid1()
-        self._pack_buffer_size = _slices_size(self.pack_slices)
-        self._unpack_buffer_size = _slices_size(self.unpack_slices)
+        self.id = uuid1()
+        self.pack_buffer_size = _slices_size(self.pack_slices)
+        self.unpack_buffer_size = _slices_size(self.unpack_slices)
 
 
 class _HaloDataTransformerType(Enum):
