@@ -112,7 +112,7 @@ def _build_flatten_indices(
 # HaloDataTransformer helpers
 
 
-def _slices_size(slices: Tuple[slice]) -> int:
+def _slices_size(slices: Tuple[slice, ...]) -> int:
     """Compute linear size from slices."""
     length = 1
     for s in slices:
@@ -131,15 +131,16 @@ class HaloExchangeData:
 
     Args:
         specification: memory layout of the data
-        pack_slices: indexing to pack
-        pack_clockwise_rotation: required data rotation when packing
-        unpack_slices: indexing to unpack
+        pack_slices: indexing to pack, one slice per dimension
+        pack_clockwise_rotation:  number of 90-degree rotations to perform
+            before packing
+        unpack_slices: indexing to unpack, one slice per dimension
     """
 
     specification: HaloUpdateSpec
-    pack_slices: Tuple[slice]
+    pack_slices: Tuple[slice, ...]
     pack_clockwise_rotation: int
-    unpack_slices: Tuple[slice]
+    unpack_slices: Tuple[slice, ...]
 
     def __post_init__(self):
         self._id = uuid1()
@@ -226,8 +227,14 @@ class HaloDataTransformer(abc.ABC):
 
     def __del__(self):
         """Del routine, making sure all buffers were inserted back into cache."""
-        assert self._pack_buffer is None
-        assert self._unpack_buffer is None
+        # Synchronize all work
+        self.synchronize()
+
+        # Push the buffers back in the cache
+        Buffer.push_to_cache(self._pack_buffer)
+        self._pack_buffer = None
+        Buffer.push_to_cache(self._unpack_buffer)
+        self._unpack_buffer = None
 
     @staticmethod
     def get(
@@ -239,8 +246,13 @@ class HaloDataTransformer(abc.ABC):
 
         Arguments:
             np_module: numpy-like module to determin child transformer type.
+            exchange_descriptors_x: list of memory information describing an exchange.
+                Used for scalar data and the x-component of vectors.
+            exchange_descriptors_y: list of memory information describing an exchange.
+                Optional, used for the y-component of vectors only.
 
-        Return: an initialized packed buffer.
+        Returns:
+            an initialized packed buffer.
         """
         if np_module is np:
             return HaloDataTransformerCPU(
@@ -262,19 +274,21 @@ class HaloDataTransformer(abc.ABC):
     def get_unpack_buffer(self) -> Buffer:
         """Retrieve unpack buffer.
 
-        WARNING: Only available _after_ `compile` as been called.
+        Synchronizes operations.
         """
         if self._unpack_buffer is None:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
+        self.synchronize()
         return self._unpack_buffer
 
     def get_pack_buffer(self) -> Buffer:
         """Retrieve pack buffer.
 
-        WARNING: Only available _after_ `compile` as been called.
+        Synchronizes operations.
         """
         if self._pack_buffer is None:
             raise RuntimeError("Send buffer can't be retrieved before allocate()")
+        self.synchronize()
         return self._pack_buffer
 
     def _compile(self):
@@ -302,44 +316,54 @@ class HaloDataTransformer(abc.ABC):
         """Check if the buffers are ready for communication."""
         return self._pack_buffer is not None and self._unpack_buffer is not None
 
-    @abc.abstractclassmethod
+    @abc.abstractmethod
     def async_pack(
         self,
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
     ):
         """Pack all given quantities into a single send Buffer.
+        
+        Does not guarantee the buffer returned by `get_unpack_buffer` has
+        received data, doing so requires calling `synchronize`.
+        Reaching for the buffer via get_pack_buffer() will call synchronize().
+        
+        Args:
+            quantities_x: scalar or vector x-component quantities to pack,
+                if one is vector they must all be vector
+        
+            quantities_y: if quantities are vector, the y-component
+                quantities.
+        """
+        pass
 
-        Implementation should guarantee the send Buffer is ready for MPI communication.
-        The send Buffer is held by this class."""
-        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
-
-    @abc.abstractclassmethod
+    @abc.abstractmethod
     def async_unpack(
         self,
         quantities_x: List[Quantity],
         quantities_y: Optional[List[Quantity]] = None,
     ):
         """Unpack the buffer into destination quantities.
+        
+        Does not guarantee the buffer returned by `get_unpack_buffer` has
+        received data, doing so requires calling `synchronize`.
+        Reaching for the buffer via get_unpack_buffer() will call synchronize().
+        
+        Args:
+            quantities_x: scalar or vector x-component quantities to be unpacked into,
+                if one is vector they must all be vector
+            quantities_y: if quantities are vector, the y-component
+                quantities.
+        """
+        pass
 
-        Implementation DOESN'T HAVE TO guarantee transfer is done."""
-        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
-
-    @abc.abstractclassmethod
-    def finalize(self):
-        """Finalize operations after unpack.
-
-        Implementation should guarantee all transfers are done.
-        Implementation should return recv & send Buffers to the cache for reuse."""
-        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
-
-    @abc.abstractclassmethod
+    @abc.abstractmethod
     def synchronize(self):
         """Synchronize all operations.
 
-        Implementation guarantees all memory is now safe to access.
+        Guarantees all memory is now safe to access.
         """
-        raise NotImplementedError("Did you call HaloDataTransformer.get()?")
+        pass
 
 
 class HaloDataTransformerCPU(HaloDataTransformer):
@@ -349,7 +373,7 @@ class HaloDataTransformerCPU(HaloDataTransformer):
     """
 
     def synchronize(self):
-        # CPU doesn't do true async
+        self._pack_buffer.finalize_memory_transfer()
         pass
 
     def async_pack(
@@ -367,7 +391,6 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             raise RuntimeError(f"Unimplemented {self._type} pack")
 
         assert isinstance(self._pack_buffer, Buffer)  # e.g. allocate happened
-        self._pack_buffer.finalize_memory_transfer()
 
     def _pack_scalar(self, quantities: List[Quantity]):
         if __debug__:
@@ -455,7 +478,6 @@ class HaloDataTransformerCPU(HaloDataTransformer):
             raise RuntimeError(f"Unimplemented {self._type} unpack")
 
         assert isinstance(self._unpack_buffer, Buffer)  # e.g. allocate happened
-        self._unpack_buffer.finalize_memory_transfer()
 
     def _unpack_scalar(self, quantities: List[Quantity]):
         if __debug__:
@@ -512,13 +534,6 @@ class HaloDataTransformerCPU(HaloDataTransformer):
                 buffer_reshape=quantity_view.shape,
             )
             offset += data_size
-
-    def finalize(self):
-        # Pop the buffers back in the cache
-        Buffer.push_to_cache(self._pack_buffer)
-        self._pack_buffer = None
-        Buffer.push_to_cache(self._unpack_buffer)
-        self._unpack_buffer = None
 
 
 class HaloDataTransformerGPU(HaloDataTransformer):
@@ -662,8 +677,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
 
         Args:
             quantities_x: list of quantities to pack. Must fit the specifications given
-            at init time.
-            quantities_y: Same as above but optional, used only for Vector transfer.
+                at init time.
+            quantities_y: Same as above but optional, used only for vector transfer.
         """
 
         # Unpack per type
@@ -784,8 +799,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
 
         Args:
             quantities_x: list of quantities to unpack. Must fit the specifications given
-            at init time.
-            quantities_y: Same as above but optional, used only for Vector transfer.
+                at init time.
+            quantities_y: Same as above but optional, used only for vector transfer.
         """
         # Unpack per type
         if self._type == _HaloDataTransformerType.SCALAR:
@@ -890,16 +905,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 # Next transformer offset into send buffer
                 offset += edge_size
 
-    def finalize(self):
-        # Synchronize all work
-        self.synchronize()
-
-        # Push the buffers back in the cache
-        Buffer.push_to_cache(self._pack_buffer)
-        self._pack_buffer = None
-        Buffer.push_to_cache(self._unpack_buffer)
-        self._unpack_buffer = None
-
+    def __del__(self):
+        super().__del__()
         # Push the streams back in the pool
         for cu_info in self._cu_kernel_args.values():
             _push_stream(cu_info.stream)

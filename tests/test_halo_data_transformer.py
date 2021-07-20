@@ -327,13 +327,10 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     data_transformer = HaloDataTransformer.get(quantity.np, exchange_descriptors)
 
     data_transformer.async_pack([quantity, quantity])
-    data_transformer.synchronize()
     # Simulate data transfer
     data_transformer.get_unpack_buffer().assign_from(
         data_transformer.get_pack_buffer().array
     )
-    data_transformer.async_unpack([quantity, quantity])
-    data_transformer.finalize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them back
@@ -359,8 +356,8 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
 
 
 def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
-    targe_quanitty_x = copy.deepcopy(quantity)
-    targe_quanitty_y = copy.deepcopy(targe_quanitty_x)
+    targe_quanity_x = copy.deepcopy(quantity)
+    targe_quanity_y = copy.deepcopy(targe_quanity_x)
     x_quantity = quantity
     y_quantity = copy.deepcopy(x_quantity)
 
@@ -437,13 +434,12 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
     )
 
     data_transformer.async_pack([x_quantity, x_quantity], [y_quantity, y_quantity])
-    data_transformer.synchronize()
     # Simulate data transfer
     data_transformer.get_unpack_buffer().assign_from(
         data_transformer.get_pack_buffer().array
     )
     data_transformer.async_unpack([x_quantity, x_quantity], [y_quantity, y_quantity])
-    data_transformer.finalize()
+    data_transformer.synchronize()
 
     # From the copy of the original quantity we rotate data
     # according to the rotation & slice and insert them bak
@@ -455,8 +451,8 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         quantity.dims,
         quantity.metadata.np,
     )
-    targe_quanitty_x.data[N_edge_boundaries[rotation][1]] = rotated_x
-    targe_quanitty_y.data[N_edge_boundaries[rotation][1]] = rotated_y
+    targe_quanity_x.data[N_edge_boundaries[rotation][1]] = rotated_x
+    targe_quanity_y.data[N_edge_boundaries[rotation][1]] = rotated_y
     rotated_x, rotated_y = rotate_vector_data(
         quantity.data[NE_corner_boundaries[rotation][0]],
         quantity.data[NE_corner_boundaries[rotation][0]],
@@ -464,10 +460,10 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         quantity.dims,
         quantity.metadata.np,
     )
-    targe_quanitty_x.data[NE_corner_boundaries[rotation][1]] = rotated_x
-    targe_quanitty_y.data[NE_corner_boundaries[rotation][1]] = rotated_y
+    targe_quanity_x.data[NE_corner_boundaries[rotation][1]] = rotated_x
+    targe_quanity_y.data[NE_corner_boundaries[rotation][1]] = rotated_y
 
-    assert (targe_quanitty_x.data == x_quantity.data).all()
-    assert (targe_quanitty_y.data == y_quantity.data).all()
+    assert (targe_quanity_x.data == x_quantity.data).all()
+    assert (targe_quanity_y.data == y_quantity.data).all()
     assert data_transformer._pack_buffer is None
     assert data_transformer._unpack_buffer is None

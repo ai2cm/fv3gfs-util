@@ -566,8 +566,8 @@ def test_halo_updater_stability(
     ranks_per_tile,
 ):
     """
-    Test that that halo_updater is stable both in data exchange and that the
-    internal buffers are re-used properly
+    Test that that halo_updater.start()/wait() is consistent through multiple execution.
+    Test the internal buffers are re-used properly and re-cached properly.
     """
     BUFFER_CACHE.clear()
     halo_updaters = []

@@ -22,9 +22,6 @@ class HaloUpdater:
     - update and start/wait trigger the halo exchange
     - the class creates a "pattern" of exchange that can fit any memory given to do/start
     - temporary references to the Quanitites are held between start and wait
-    - Optional: finalize_on_wait allows for a behavior that flushes buffers at every wait call
-        and re-fetch buffers at every start. This allows to keep the API behavior consistent with
-        previous version when using Communicator.start_halo_update/wait
     """
 
     def __init__(
@@ -33,8 +30,16 @@ class HaloUpdater:
         tag: int,
         transformers: Dict[int, HaloDataTransformer],
         timer: Timer,
-        finalize_on_wait: bool,
     ):
+        """Build the updater.
+        
+        Args:
+            comm: communicator responsible for send/recv commands.
+            tag: network tag to be used for communication
+            transformers: list of data transformers to pack/unpack before and after
+                communication
+            timer: timing operations
+        """
         self._comm = comm
         self._tag = tag
         self._transformers = transformers
@@ -43,7 +48,6 @@ class HaloUpdater:
         self._send_requests: List[AsyncRequest] = []
         self._inflight_x_quantities: Optional[Tuple[Quantity, ...]] = None
         self._inflight_y_quantities: Optional[Tuple[Quantity, ...]] = None
-        self._finalize_on_wait = finalize_on_wait
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""
@@ -54,9 +58,8 @@ class HaloUpdater:
             raise RuntimeError(
                 "An halo exchange wasn't completed and a wait() call was expected"
             )
-        if not self._finalize_on_wait:
-            for buffer in self._transformers.values():
-                buffer.finalize()
+        for transformer in self._transformers.values():
+            transformer.__del__()
 
     @classmethod
     def from_scalar_specifications(
@@ -67,7 +70,6 @@ class HaloUpdater:
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
-        finalize_on_wait: bool = False,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
 
@@ -103,7 +105,7 @@ class HaloUpdater:
                 numpy_like_module, exchange_descriptor
             )
 
-        return cls(comm, tag, transformers, timer, finalize_on_wait)
+        return cls(comm, tag, transformers, timer)
 
     @classmethod
     def from_vector_specifications(
@@ -115,7 +117,6 @@ class HaloUpdater:
         boundaries: Iterable[Boundary],
         tag: int,
         optional_timer: Optional[Timer] = None,
-        finalize_on_wait: bool = False,
     ) -> "HaloUpdater":
         """Create/retrieve as many packed buffer as needed and queue the slices to exchange.
 
@@ -128,7 +129,6 @@ class HaloUpdater:
                           Length must match x specifications.
             boundaries: informations on the exchange boundaries.
             tag: network tag (to differentiate messaging) for this node.
-            n_halo_points: size of the halo to exchange.
             optional_timer: timing of operations.
 
         Returns:
@@ -169,7 +169,7 @@ class HaloUpdater:
                 exchange_descriptors_y=exchange_descriptor_y,
             )
 
-        return cls(comm, tag, transformers, timer, finalize_on_wait)
+        return cls(comm, tag, transformers, timer)
 
     def update(
         self,
@@ -213,8 +213,6 @@ class HaloUpdater:
         with self._timer.clock("pack"):
             for transformer in self._transformers.values():
                 transformer.async_pack(quantities_x, quantities_y)
-            for transformer in self._transformers.values():
-                transformer.synchronize()
 
         self._inflight_x_quantities = tuple(quantities_x)
         self._inflight_y_quantities = (
@@ -252,12 +250,8 @@ class HaloUpdater:
                 buffer.async_unpack(
                     self._inflight_x_quantities, self._inflight_y_quantities
                 )
-            if self._finalize_on_wait:
-                for transformer in self._transformers.values():
-                    transformer.finalize()
-            else:
-                for transformer in self._transformers.values():
-                    transformer.synchronize()
+            for transformer in self._transformers.values():
+                transformer.synchronize()
 
         self._inflight_x_quantities = None
         self._inflight_y_quantities = None
