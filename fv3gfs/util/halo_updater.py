@@ -48,6 +48,14 @@ class HaloUpdater:
         self._send_requests: List[AsyncRequest] = []
         self._inflight_x_quantities: Optional[Tuple[Quantity, ...]] = None
         self._inflight_y_quantities: Optional[Tuple[Quantity, ...]] = None
+        self._finalize_on_wait = False
+
+    def force_finalize_on_wait(self):
+        """HaloDataTransformer are finalized after a wait call
+        
+        This is a temporary fix. See DSL-816 which will remove self._finalize_on_wait.
+        """
+        self._finalize_on_wait = True
 
     def __del__(self):
         """Clean up all buffers on garbage collection"""
@@ -58,8 +66,9 @@ class HaloUpdater:
             raise RuntimeError(
                 "An halo exchange wasn't completed and a wait() call was expected"
             )
-        for transformer in self._transformers.values():
-            transformer.__del__()
+        if not self._finalize_on_wait:
+            for transformer in self._transformers.values():
+                transformer.finalize()
 
     @classmethod
     def from_scalar_specifications(
@@ -250,8 +259,12 @@ class HaloUpdater:
                 buffer.async_unpack(
                     self._inflight_x_quantities, self._inflight_y_quantities
                 )
-            for transformer in self._transformers.values():
-                transformer.synchronize()
+            if self._finalize_on_wait:
+                for transformer in self._transformers.values():
+                    transformer.finalize()
+            else:
+                for transformer in self._transformers.values():
+                    transformer.synchronize()
 
         self._inflight_x_quantities = None
         self._inflight_y_quantities = None

@@ -224,18 +224,16 @@ class HaloDataTransformer(abc.ABC):
         self._unpack_buffer = None
         self._compile()
 
-    def __del__(self):
+    def finalize(self):
         """Del routine, making sure all buffers were inserted back into cache."""
         # Synchronize all work
         self.synchronize()
 
         # Push the buffers back in the cache
-        if self._pack_buffer is not None:
-            Buffer.push_to_cache(self._pack_buffer)
-            self._pack_buffer = None
-        if self._unpack_buffer is not None:
-            Buffer.push_to_cache(self._unpack_buffer)
-            self._unpack_buffer = None
+        Buffer.push_to_cache(self._pack_buffer)
+        self._pack_buffer = None
+        Buffer.push_to_cache(self._unpack_buffer)
+        self._unpack_buffer = None
 
     @staticmethod
     def get(
@@ -909,8 +907,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 # Next transformer offset into send buffer
                 offset += edge_size
 
-    def __del__(self):
-        super().__del__()
+    def finalize(self):
+        super().finalize()
         # Push the streams back in the pool
         for cu_info in self._cu_kernel_args.values():
             _push_stream(cu_info.stream)
