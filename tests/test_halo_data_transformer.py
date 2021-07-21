@@ -19,8 +19,8 @@ from fv3gfs.util import (
 )
 from fv3gfs.util.halo_data_transformer import (
     HaloDataTransformer,
-    HaloExchangeData,
-    HaloUpdateSpec,
+    HaloExchangeSpec,
+    QuantityHaloSpec,
 )
 from fv3gfs.util.buffer import Buffer
 from fv3gfs.util.rotate import rotate_scalar_data, rotate_vector_data
@@ -209,7 +209,7 @@ def test_data_transformer_allocate(quantity, n_halos):
         interior=False,
     )
 
-    specification = HaloUpdateSpec(
+    specification = QuantityHaloSpec(
         n_points=n_halos,
         shape=quantity.data.shape,
         strides=quantity.data.strides,
@@ -222,8 +222,8 @@ def test_data_transformer_allocate(quantity, n_halos):
     )
 
     exchange_descriptors = [
-        HaloExchangeData(specification, boundary_north, 0, boundary_north),
-        HaloExchangeData(specification, boundary_southwest, 0, boundary_southwest),
+        HaloExchangeSpec(specification, boundary_north, 0, boundary_north),
+        HaloExchangeSpec(specification, boundary_southwest, 0, boundary_southwest),
     ]
 
     data_transformer = HaloDataTransformer.get(quantity.np, exchange_descriptors)
@@ -297,7 +297,7 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
     }
 
-    specification = HaloUpdateSpec(
+    specification = QuantityHaloSpec(
         n_points=n_halos,
         shape=quantity.data.shape,
         strides=quantity.data.strides,
@@ -310,13 +310,13 @@ def test_data_transformer_scalar_pack_unpack(quantity, rotation, n_halos):
     )
 
     exchange_descriptors = [
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification,
             N_edge_boundaries[rotation][0],
             rotation,
             N_edge_boundaries[rotation][1],
         ),
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification,
             NE_corner_boundaries[rotation][0],
             rotation,
@@ -377,7 +377,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         -3: (send_boundaries[NORTH], recv_boundaries[EAST]),
     }
 
-    specification_x = HaloUpdateSpec(
+    specification_x = QuantityHaloSpec(
         n_points=n_halos,
         shape=x_quantity.data.shape,
         strides=x_quantity.data.strides,
@@ -388,7 +388,7 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         numpy_module=x_quantity.np,
         dtype=x_quantity.metadata.dtype,
     )
-    specification_y = HaloUpdateSpec(
+    specification_y = QuantityHaloSpec(
         n_points=n_halos,
         shape=y_quantity.data.shape,
         strides=y_quantity.data.strides,
@@ -401,13 +401,13 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
     )
 
     exchange_descriptors_x = [
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification_x,
             N_edge_boundaries[rotation][0],
             rotation,
             N_edge_boundaries[rotation][1],
         ),
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification_x,
             NE_corner_boundaries[rotation][0],
             rotation,
@@ -415,13 +415,13 @@ def test_data_transformer_vector_pack_unpack(quantity, rotation, n_halos):
         ),
     ]
     exchange_descriptors_y = [
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification_y,
             N_edge_boundaries[rotation][0],
             rotation,
             N_edge_boundaries[rotation][1],
         ),
-        HaloExchangeData(
+        HaloExchangeSpec(
             specification_y,
             NE_corner_boundaries[rotation][0],
             rotation,
