@@ -201,6 +201,11 @@ class HaloDataTransformer(abc.ABC):
 
         Arguments:
             np_module: numpy-like module for allocation
+            exchange_descriptors_x: list of memory information describing an exchange.
+                Used for scalar data and the x-component of vectors.
+            exchange_descriptors_y: list of memory information describing an exchange.
+                Optional, used for the y-component of vectors only. If `none` the data will packed
+                as a scalar.
         """
         self._type = (
             _HaloDataTransformerType.SCALAR
