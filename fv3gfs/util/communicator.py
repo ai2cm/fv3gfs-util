@@ -486,6 +486,7 @@ class CubedSphereCommunicator(Communicator):
             specifications.append(specification)
 
         halo_updater = self.get_scalar_halo_updater(specifications)
+        halo_updater.force_finalize_on_wait()
         halo_updater.start(quantities)
         return halo_updater
 
@@ -581,6 +582,7 @@ class CubedSphereCommunicator(Communicator):
             y_specifications.append(y_specification)
 
         halo_updater = self.get_vector_halo_updater(x_specifications, y_specifications)
+        halo_updater.force_finalize_on_wait()
         halo_updater.start(x_quantities, y_quantities)
         return halo_updater
 

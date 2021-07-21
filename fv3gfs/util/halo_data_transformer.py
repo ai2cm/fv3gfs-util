@@ -144,7 +144,7 @@ class HaloExchangeSpec:
 
     def __post_init__(self):
         self._id = uuid1()
-        self._pack_buffer_size = _slices_size(self.pack_slices)
+        self.pack_buffer_size = _slices_size(self.pack_slices)
         self._unpack_buffer_size = _slices_size(self.unpack_slices)
 
 
@@ -201,6 +201,11 @@ class HaloDataTransformer(abc.ABC):
 
         Arguments:
             np_module: numpy-like module for allocation
+            exchange_descriptors_x: list of memory information describing an exchange.
+                Used for scalar data and the x-component of vectors.
+            exchange_descriptors_y: list of memory information describing an exchange.
+                Optional, used for the y-component of vectors only. If `none` the data will packed
+                as a scalar.
         """
         self._type = (
             _HaloDataTransformerType.SCALAR
@@ -224,18 +229,16 @@ class HaloDataTransformer(abc.ABC):
         self._unpack_buffer = None
         self._compile()
 
-    def __del__(self):
+    def finalize(self):
         """Del routine, making sure all buffers were inserted back into cache."""
         # Synchronize all work
         self.synchronize()
 
         # Push the buffers back in the cache
-        if self._pack_buffer is not None:
-            Buffer.push_to_cache(self._pack_buffer)
-            self._pack_buffer = None
-        if self._unpack_buffer is not None:
-            Buffer.push_to_cache(self._unpack_buffer)
-            self._unpack_buffer = None
+        Buffer.push_to_cache(self._pack_buffer)
+        self._pack_buffer = None
+        Buffer.push_to_cache(self._unpack_buffer)
+        self._unpack_buffer = None
 
     @staticmethod
     def get(
@@ -300,11 +303,11 @@ class HaloDataTransformer(abc.ABC):
         buffer_size = 0
         dtype = None
         for edge_x in self._infos_x:
-            buffer_size += edge_x._pack_buffer_size
+            buffer_size += edge_x.pack_buffer_size
             dtype = edge_x.specification.dtype
         if self._type is _HaloDataTransformerType.VECTOR:
             for edge_y in self._infos_y:
-                buffer_size += edge_y._pack_buffer_size
+                buffer_size += edge_y.pack_buffer_size
 
         # Retrieve two properly sized buffers
         self._pack_buffer = Buffer.pop_from_cache(
@@ -716,7 +719,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
 
                 # Launch kernel
                 blocks = 128
-                grid_x = (info_x._pack_buffer_size // blocks) + 1
+                grid_x = (info_x.pack_buffer_size // blocks) + 1
                 if pack_scalar_f64_kernel is None:
                     RuntimeError("CUDA nvrtc failed")
                 else:
@@ -726,14 +729,14 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                         (
                             quantity.data[:],  # source_array
                             cu_kernel_args.x_send_indices,  # indices
-                            info_x._pack_buffer_size,  # nIndex
+                            info_x.pack_buffer_size,  # nIndex
                             offset,
                             self._pack_buffer.array,
                         ),
                     )
 
                 # Next transformer offset into send buffer
-                offset += info_x._pack_buffer_size
+                offset += info_x.pack_buffer_size
 
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
@@ -761,7 +764,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             with self._get_stream(cu_kernel_args.stream):
 
                 # Buffer sizes
-                transformer_size = info_x._pack_buffer_size + info_y._pack_buffer_size
+                transformer_size = info_x.pack_buffer_size + info_y.pack_buffer_size
 
                 if quantity_x.metadata.dtype != np.float64:
                     raise RuntimeError(f"Kernel requires f64 given {np.float64}")
@@ -780,8 +783,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                             quantity_y.data[:],  # source_array_y
                             cu_kernel_args.x_send_indices,  # indices_x
                             cu_kernel_args.y_send_indices,  # indices_y
-                            info_x._pack_buffer_size,  # nIndex_x
-                            info_y._pack_buffer_size,  # nIndex_y
+                            info_x.pack_buffer_size,  # nIndex_x
+                            info_y.pack_buffer_size,  # nIndex_y
                             offset,
                             (-info_x.pack_clockwise_rotation) % 4,  # rotation
                             self._pack_buffer.array,
@@ -909,8 +912,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                 # Next transformer offset into send buffer
                 offset += edge_size
 
-    def __del__(self):
-        super().__del__()
+    def finalize(self):
+        super().finalize()
         # Push the streams back in the pool
         for cu_info in self._cu_kernel_args.values():
             _push_stream(cu_info.stream)

@@ -620,11 +620,12 @@ def test_halo_updater_stability(
     assert len(BUFFER_CACHE) == 1
     assert len(next(iter(BUFFER_CACHE.values()))) == 0
 
-    # Manually run __del__ to force updater cleanup
+    # Manually call finalize on the transfomers
     # This should recache all the buffers
+    # DSL-816 will refactor that behavior out
     for halo_updater in halo_updaters:
-        halo_updater.__del__()
-    halo_updaters = []
+        for transformer in halo_updater._transformers.values():
+            transformer.finalize()
 
     # With the layout constrained we will have
     # 6 (ranks) * 4 (boundaries) * 2 (send&recv) buffers recached.
