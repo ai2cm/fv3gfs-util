@@ -1,6 +1,10 @@
 from collections import defaultdict
 from .types import NumpyModule, AsyncRequest
-from .halo_data_transformer import HaloDataTransformer, HaloExchangeSpec, QuantityHaloSpec
+from .halo_data_transformer import (
+    HaloDataTransformer,
+    HaloExchangeSpec,
+    QuantityHaloSpec,
+)
 from ._timing import Timer, NullTimer
 from .boundary import Boundary
 from typing import Dict, Iterable, List, Optional, TYPE_CHECKING, Tuple
@@ -87,19 +91,26 @@ class HaloUpdater:
 
         timer = optional_timer if optional_timer is not None else NullTimer()
 
-        transformers: Dict[int, HaloExchangeSpec] = {}
-
+        # Sort the specification per target rank
+        exchange_specs_dict = defaultdict(list)
         for boundary in boundaries:
             for specification in specifications:
-                transformers[boundary.to_rank] = HaloDataTransformer.get(
-                    numpy_like_module, 
+                exchange_specs_dict[boundary.to_rank].append(
                     HaloExchangeSpec(
                         specification,
                         boundary.send_slice(specification),
                         boundary.n_clockwise_rotations,
                         boundary.recv_slice(specification),
-                    )
+                    ),
                 )
+
+        # Create the data transformers to support pack/unpack
+        # One transformer per target rank
+        transformers: Dict[int, HaloDataTransformer] = {}
+        for rank, exchange_specs in exchange_specs_dict.items():
+            transformers[rank] = HaloDataTransformer.get(
+                numpy_like_module, exchange_specs
+            )
 
         return cls(comm, tag, transformers, timer)
 
