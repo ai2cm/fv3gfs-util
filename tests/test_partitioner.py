@@ -3,6 +3,21 @@ import fv3gfs.util
 import fv3gfs.util.partitioner
 
 
+@pytest.mark.parametrize(
+    "rank, total_ranks, tile_extent, rounding_extent",
+    [
+        (0, 3, 9, 0),
+        (2, 3, 9, 0),
+        (0, 3, 5, 1),
+        (1, 3, 5, 0),
+        (2, 3, 5, 1),
+    ]
+)
+def test_rounding_extent_1d(rank, total_ranks, tile_extent, rounding_extent):
+    result = fv3gfs.util.partitioner._rounding_extent_1d(rank, total_ranks, tile_extent)
+    assert result == rounding_extent
+
+
 rank_list = []
 total_rank_list = []
 tile_index_list = []
@@ -277,7 +292,8 @@ def test_tile_extent_from_rank_metadata(array_extent, array_dims, layout, tile_e
 def test_subtile_slice(
     array_dims, tile_extent, layout, subtile_index, subtile_slice, overlap
 ):
+    rank = subtile_index[0] * layout[0] + subtile_index[1]
     result = fv3gfs.util.partitioner.subtile_slice(
-        array_dims, tile_extent, layout, subtile_index, overlap
+        rank, array_dims, tile_extent, layout, subtile_index, overlap
     )
     assert result == subtile_slice

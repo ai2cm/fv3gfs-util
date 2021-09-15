@@ -178,6 +178,7 @@ class _ZarrVariableWriter:
             self.i_time,
             self._partitioner.tile_index(self.rank),
         ) + subtile_slice(
+            self.rank,
             quantity.dims,
             self.array.shape[2:],  # remove time and tile dimensions
             self.partitioner.layout,
