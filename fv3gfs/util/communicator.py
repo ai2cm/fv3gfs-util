@@ -137,7 +137,7 @@ class Communicator:
             metadata = self.comm.bcast(send_quantity.metadata, root=constants.ROOT_RANK)
         else:
             metadata = self.comm.bcast(None, root=constants.ROOT_RANK)
-        shape = self.partitioner.subtile_extent(metadata)
+        shape = self.partitioner.subtile_extent(self.rank, metadata)
         if recv_quantity is None:
             recv_quantity = self._get_scatter_recv_quantity(shape, metadata)
         if self.rank == constants.ROOT_RANK:
@@ -224,7 +224,7 @@ class Communicator:
                 )
                 if recv_quantity is None:
                     global_extent = self.partitioner.global_extent(
-                        send_quantity.metadata
+                        self.rank, send_quantity.metadata
                     )
                     recv_quantity = self._get_gather_recv_quantity(
                         global_extent, send_quantity.metadata

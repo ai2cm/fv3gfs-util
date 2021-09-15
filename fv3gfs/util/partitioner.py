@@ -125,23 +125,29 @@ class TilePartitioner(Partitioner):
     def total_ranks(self) -> int:
         return self.layout[0] * self.layout[1]
 
-    def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def global_extent(self, rank: int, metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full tile representation for the given dimensions.
 
         Args:
+            rank: rank for which quantity metadata is being passed
             metadata: quantity metadata
 
         Returns:
             extent: shape of full tile representation
         """
         return tile_extent_from_rank_metadata(
-            rank_metadata.dims, rank_metadata.extent, self.layout
+            dims=metadata.dims,
+            rank_extent=metadata.extent,
+            layout=self.layout,
+            rank=rank,
         )
 
-    def subtile_extent(self, global_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def subtile_extent(
+        self, rank, global_metadata: QuantityMetadata
+    ) -> Tuple[int, ...]:
         """Return the shape of a single rank representation for the given dimensions."""
         return rank_extent_from_tile_metadata(
-            global_metadata.dims, global_metadata.extent, self.layout
+            global_metadata.dims, global_metadata.extent, self.layout, rank=rank
         )
 
     def subtile_slice(
@@ -552,17 +558,21 @@ class CubedSpherePartitioner(Partitioner):
             n_clockwise_rotations=rotations,
         )
 
-    def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def global_extent(self, rank, metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full cube representation for the given dimensions.
 
         Args:
+            rank: rank for which quantity metadata is being passed
             metadata: quantity metadata
 
         Returns:
             extent: shape of full cube representation
         """
         return (6,) + tile_extent_from_rank_metadata(
-            rank_metadata.dims, rank_metadata.extent, self.layout
+            dims=metadata.dims,
+            rank_extent=metadata.extent,
+            layout=self.layout,
+            rank=rank,
         )
 
     def subtile_extent(self, cube_metadata: QuantityMetadata) -> Tuple[int, ...]:
@@ -699,7 +709,7 @@ def is_even(value: Union[int, float]) -> bool:
 
 
 def tile_extent_from_rank_metadata(
-    dims: Sequence[str], rank_extent: Sequence[int], layout: Tuple[int, int]
+    dims: Sequence[str], rank_extent: Sequence[int], layout: Tuple[int, int], rank: int
 ) -> Tuple[int, ...]:
     """
     Returns the extent of a tile given data about a single rank, and the tile
@@ -709,6 +719,7 @@ def tile_extent_from_rank_metadata(
         dims: dimension names
         rank_extent: the extent of one rank
         layout: the (y, x) number of ranks along each tile axis
+        rank: rank for which rank_extent was passed
 
     Returns:
         tile_extent: the extent of one tile
@@ -720,7 +731,7 @@ def tile_extent_from_rank_metadata(
 
 
 def rank_extent_from_tile_metadata(
-    dims: Sequence[str], tile_extent: Sequence[int], layout: Tuple[int, int]
+    dims: Sequence[str], tile_extent: Sequence[int], layout: Tuple[int, int], rank: int
 ) -> Tuple[int, ...]:
     """
     Returns the extent of a rank given data about a tile, and the tile
@@ -728,8 +739,9 @@ def rank_extent_from_tile_metadata(
 
     Args:
         dims: dimension names
-        rank_extent: the extent of a tile
+        tile_extent: the extent of a tile
         layout: the (y, x) number of ranks along each tile axis
+        rank: rank for which extent should be returned
 
     Returns:
         rank_extent: the extent of one rank
