@@ -24,7 +24,6 @@ def total_ranks(ranks_per_tile):
 
 @pytest.fixture
 def shape(nz, ny, nx, dims, n_points):
-    return (3, 3, 3)
     return_list = []
     length_dict = {
         fv3gfs.util.X_DIM: 2 * n_points + nx,
@@ -92,6 +91,7 @@ def communicator_list(cube_partitioner):
                     rank=rank, total_ranks=total_ranks, buffer_dict=shared_buffer
                 ),
                 partitioner=cube_partitioner,
+                timer=fv3gfs.util.Timer(),
             )
         )
     return return_list
@@ -117,12 +117,12 @@ def rank_quantity_list(total_ranks, numpy, dtype):
 
 @pytest.mark.filterwarnings("ignore:invalid value encountered in remainder")
 def test_correct_rank_layout(rank_quantity_list, communicator_list, subtests, numpy):
-    req_list = []
+    halo_updater_list = []
     for communicator, quantity in zip(communicator_list, rank_quantity_list):
-        req = communicator.start_halo_update(quantity, 1)
-        req_list.append(req)
-    for req in req_list:
-        req.wait()
+        halo_updater = communicator.start_halo_update(quantity, 1)
+        halo_updater_list.append(halo_updater)
+    for halo_updater in halo_updater_list:
+        halo_updater.wait()
     for rank, quantity in enumerate(rank_quantity_list):
         with subtests.test(rank=rank):
             if rank % 2 == 0:
