@@ -1,5 +1,5 @@
-This package is a toolkit of Python objects and routines for writing weather and climate models.
+# fv3gs-util has moved!
 
-This is research software and still in development. We welcome external contributions. If you would like to contribute to this project, please get in touch with one of our developers!
+Please visit [pace](https://github.com/ai2cm/pace/tree/main/fv3gfs-util) to follow the latest development.
 
-* Free software: BSD license
+> This repository is no longer maintained
