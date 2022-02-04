@@ -22,7 +22,7 @@ jobs:
           name: install MPI
           command: |
             sudo apt-get update
-            sudo apt-get install libopenmpi3
+            sudo apt-get install libopenmpi3 libopenmpi-dev
             sudo pip3 install tox -c constraints.txt
       - run:
           name: run tests

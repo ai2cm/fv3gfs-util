@@ -1,6 +1,9 @@
 fv3gfs-util
 ===========
 
+.. warning::
+   fv3gfs-util has been renamed to pace-util, and can now be found in the `Pace Github repository <https://github.com/ai2cm/pace>`_.
+
 fv3gfs-util is a toolkit for building Python weather and climate models. Its features can seem disjoint, which is by design - you can choose which functionality you want to use and leave the rest. It is currently used to contain pure Python utilities shared by `fv3gfs-wrapper`_ and `fv3core`_. As the number of features increases, we may move its functionality into separate packages to reduce the dependency stack.
 
 Some broad categories of features are:
