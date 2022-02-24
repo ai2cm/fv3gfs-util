@@ -5,6 +5,7 @@ import functools
 import dataclasses
 from . import constants, utils
 from .constants import (
+    HORIZONTAL_DIMS,
     NORTH,
     SOUTH,
     WEST,
@@ -13,6 +14,8 @@ from .constants import (
     NORTHEAST,
     SOUTHWEST,
     SOUTHEAST,
+    X_DIMS,
+    Y_DIMS,
 )
 import numpy as np
 from . import boundary as bd
@@ -119,29 +122,36 @@ class TilePartitioner(Partitioner):
 
     def subtile_index(self, rank: int) -> Tuple[int, int]:
         """Return the (y, x) subtile position of a given rank as an integer number of subtiles."""
-        return subtile_index(rank, self.total_ranks, self.layout)
+        idx = subtile_index(rank, self.layout)
+        return idx.j, idx.i
 
     @property
     def total_ranks(self) -> int:
         return self.layout[0] * self.layout[1]
 
-    def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def global_extent(self, rank: int, metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full tile representation for the given dimensions.
 
         Args:
+            rank: rank for which quantity metadata is being passed
             metadata: quantity metadata
 
         Returns:
             extent: shape of full tile representation
         """
         return tile_extent_from_rank_metadata(
-            rank_metadata.dims, rank_metadata.extent, self.layout
+            dims=metadata.dims,
+            rank_extent=metadata.extent,
+            layout=self.layout,
+            rank=rank,
         )
 
-    def subtile_extent(self, global_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def subtile_extent(
+        self, rank, global_metadata: QuantityMetadata
+    ) -> Tuple[int, ...]:
         """Return the shape of a single rank representation for the given dimensions."""
         return rank_extent_from_tile_metadata(
-            global_metadata.dims, global_metadata.extent, self.layout
+            global_metadata.dims, global_metadata.extent, self.layout, rank=rank
         )
 
     def subtile_slice(
@@ -170,6 +180,7 @@ class TilePartitioner(Partitioner):
                 to the subtile compute domain
         """
         return subtile_slice(
+            rank,
             global_dims,
             global_extent,
             self.layout,
@@ -552,17 +563,21 @@ class CubedSpherePartitioner(Partitioner):
             n_clockwise_rotations=rotations,
         )
 
-    def global_extent(self, rank_metadata: QuantityMetadata) -> Tuple[int, ...]:
+    def global_extent(self, rank, metadata: QuantityMetadata) -> Tuple[int, ...]:
         """Return the shape of a full cube representation for the given dimensions.
 
         Args:
+            rank: rank for which quantity metadata is being passed
             metadata: quantity metadata
 
         Returns:
             extent: shape of full cube representation
         """
         return (6,) + tile_extent_from_rank_metadata(
-            rank_metadata.dims, rank_metadata.extent, self.layout
+            dims=metadata.dims,
+            rank_extent=metadata.extent,
+            layout=self.layout,
+            rank=rank,
         )
 
     def subtile_extent(self, cube_metadata: QuantityMetadata) -> Tuple[int, ...]:
@@ -608,6 +623,7 @@ class CubedSpherePartitioner(Partitioner):
             )
         i_tile = self.tile_index(rank)
         return (i_tile,) + subtile_slice(
+            rank,
             global_dims[1:],
             global_extent[1:],
             self.layout,
@@ -685,13 +701,19 @@ def transform_subtile_rank(
     return rank_array[np.where(transformed_rank_array == rank)][0]
 
 
+@dataclasses.dataclass
+class HorizontalIndex:
+    j: int
+    i: int
+
+
 def subtile_index(
-    rank: int, ranks_per_tile: int, layout: Tuple[int, int]
-) -> Tuple[int, int]:
-    within_tile_rank = rank % ranks_per_tile
+    rank: int, layout: Tuple[int, int]
+) -> HorizontalIndex:
+    within_tile_rank = rank % (layout[0] * layout[1])
     j = within_tile_rank // layout[1]
     i = within_tile_rank % layout[1]
-    return j, i
+    return HorizontalIndex(j=j, i=i)
 
 
 def is_even(value: Union[int, float]) -> bool:
@@ -699,7 +721,7 @@ def is_even(value: Union[int, float]) -> bool:
 
 
 def tile_extent_from_rank_metadata(
-    dims: Sequence[str], rank_extent: Sequence[int], layout: Tuple[int, int]
+    dims: Sequence[str], rank_extent: Sequence[int], layout: Tuple[int, int], rank: int
 ) -> Tuple[int, ...]:
     """
     Returns the extent of a tile given data about a single rank, and the tile
@@ -709,6 +731,7 @@ def tile_extent_from_rank_metadata(
         dims: dimension names
         rank_extent: the extent of one rank
         layout: the (y, x) number of ranks along each tile axis
+        rank: rank for which rank_extent was passed
 
     Returns:
         tile_extent: the extent of one tile
@@ -720,7 +743,7 @@ def tile_extent_from_rank_metadata(
 
 
 def rank_extent_from_tile_metadata(
-    dims: Sequence[str], tile_extent: Sequence[int], layout: Tuple[int, int]
+    dims: Sequence[str], tile_extent: Sequence[int], layout: Tuple[int, int], rank: int
 ) -> Tuple[int, ...]:
     """
     Returns the extent of a rank given data about a tile, and the tile
@@ -728,8 +751,9 @@ def rank_extent_from_tile_metadata(
 
     Args:
         dims: dimension names
-        rank_extent: the extent of a tile
+        tile_extent: the extent of a tile
         layout: the (y, x) number of ranks along each tile axis
+        rank: rank for which extent should be returned
 
     Returns:
         rank_extent: the extent of one rank
@@ -737,7 +761,58 @@ def rank_extent_from_tile_metadata(
     layout_factors = 1 / np.asarray(
         utils.list_by_dims(dims, layout, non_horizontal_value=1)
     )
-    return extent_from_metadata(dims, tile_extent, layout_factors)
+    base_extent = extent_from_metadata(dims, tile_extent, layout_factors)
+    rounding_extent = _rounding_extent(dims, tile_extent=tile_extent, layout=layout, rank=rank)
+    return tuple(b + r for b, r in zip(base_extent, rounding_extent))
+
+
+def _rounding_extent(
+    dims: Sequence[str], tile_extent: Sequence[int], layout: Tuple[int, int], rank: int
+) -> Tuple[int, ...]:
+    """
+    For each dimension, the amount of extent (either 0 or 1) which is unevenly
+    distributed between ranks along the dimension. For example, if a tile
+    dimension has length 5 but 3 ranks, two of those ranks will have 1 extra
+    extent on that dimension.
+
+    Args:
+        dims: dimension names
+        tile_extent: the extent of a tile
+        layout: the (y, x) number of ranks along each tile axis
+        rank: rank for which extent should be returned
+    """
+    idx = subtile_index(rank, layout=layout)
+    return_list = []
+    for dim, dim_extent in zip(dims, tile_extent):
+        if dim in HORIZONTAL_DIMS:
+            if dim in Y_DIMS:
+                dim_layout = layout[0]
+                dim_index = idx.j
+            elif dim in X_DIMS:
+                dim_layout = layout[1]
+                dim_index = idx.i
+            else:
+                raise RuntimeError(
+                    f"found dim {dim} which is a horizontal dim but not an x or y dim,"
+                    " there is probably a bug in X_DIMS, Y_DIMS, or HORIZONAL_DIMS"
+                )
+            return_list.append(_rounding_extent_1d(rank=dim_index, total_ranks=dim_layout, tile_extent=dim_extent))
+        else:
+            return_list.append(0)
+    return tuple(return_list)
+
+
+def _rounding_extent_1d(rank, total_ranks, tile_extent):
+    extra_points = tile_extent % total_ranks
+    # extra points are allocated to edge ranks, with a bias to the left edge
+    distance_from_left = rank
+    distance_from_right = total_ranks - rank - 1
+    close_enough_to_left = extra_points > 2 * distance_from_left
+    close_enough_to_right = extra_points - 1 > 2 * distance_from_right
+    if close_enough_to_left or close_enough_to_right:
+        return 1
+    else:
+        return 0
 
 
 def extent_from_metadata(
@@ -777,9 +852,9 @@ class _IndexData1D:
         return self.i_subtile == self.n_ranks - 1
 
 
-def _index_generator(dims, tile_extent, subtile_index, horizontal_layout):
+def _index_generator(rank, dims, tile_extent, subtile_index, horizontal_layout):
     subtile_extent = rank_extent_from_tile_metadata(
-        dims, tile_extent, horizontal_layout
+        dims, tile_extent, horizontal_layout, rank=rank
     )
     quantity_layout = utils.list_by_dims(
         dims, horizontal_layout, non_horizontal_value=1
@@ -794,6 +869,7 @@ def _index_generator(dims, tile_extent, subtile_index, horizontal_layout):
 
 
 def subtile_slice(
+    rank: int,
     dims: Iterable[str],
     global_extent: Iterable[int],
     layout: Tuple[int, int],
@@ -815,7 +891,7 @@ def subtile_slice(
     return_list = []
     # discard last index for interface variables, unless you're the last rank
     # done so that only one rank is responsible for the shared interface point
-    for index in _index_generator(dims, global_extent, subtile_index, layout):
+    for index in _index_generator(rank, dims, global_extent, subtile_index, layout):
         start = index.i_subtile * index.base_extent
         if index.is_end_index or overlap:
             end = start + index.extent

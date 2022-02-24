@@ -143,7 +143,7 @@ class _ZarrVariableWriter:
         self.sync_array()
 
     def _init_zarr_root(self, quantity):
-        tile_shape = self._partitioner.tile.global_extent(quantity.metadata)
+        tile_shape = self._partitioner.tile.global_extent(self.rank, quantity.metadata)
         chunks = self._prepend_chunks + array_chunks(
             self._partitioner.layout, tile_shape, quantity.dims
         )
@@ -167,7 +167,7 @@ class _ZarrVariableWriter:
         if self.i_time >= self.array.shape[0] and self.rank == 0:
             new_shape = list(
                 self._prepend_shape
-                + self._partitioner.tile.global_extent(quantity.metadata)
+                + self._partitioner.tile.global_extent(self.rank, quantity.metadata)
             )
             new_shape[0] = self.i_time + 1
             self.array.resize(*new_shape)
@@ -178,6 +178,7 @@ class _ZarrVariableWriter:
             self.i_time,
             self._partitioner.tile_index(self.rank),
         ) + subtile_slice(
+            self.rank,
             quantity.dims,
             self.array.shape[2:],  # remove time and tile dimensions
             self.partitioner.layout,
