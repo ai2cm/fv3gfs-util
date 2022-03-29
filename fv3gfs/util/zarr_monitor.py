@@ -1,4 +1,5 @@
 from typing import Union, Tuple
+from datetime import datetime, timedelta
 import cftime
 import logging
 
@@ -41,7 +42,9 @@ class DummyComm:
 
 
 class ZarrMonitor:
-    """sympl.Monitor-style object for storing model state dictionaries in a Zarr store."""
+    """
+    sympl.Monitor-style object for storing model state dictionaries in a Zarr store.
+    """
 
     def __init__(
         self,
@@ -67,17 +70,24 @@ class ZarrMonitor:
         self._group = mpi_comm.bcast(group)
         self._comm = mpi_comm
         self._writers = None
+        self._constants = []
         self.partitioner = partitioner
 
     def _init_writers(self, state):
         self._writers = {
             key: _ZarrVariableWriter(
-                self._comm, self._group, name=key, partitioner=self.partitioner,
+                self._comm,
+                self._group,
+                name=key,
+                partitioner=self.partitioner,
             )
             for key in set(state.keys()).difference(["time"])
         }
         self._writers["time"] = _ZarrTimeWriter(
-            self._comm, self._group, name="time", partitioner=self.partitioner,
+            self._comm,
+            self._group,
+            name="time",
+            partitioner=self.partitioner,
         )
 
     def _check_writers(self, state):
@@ -111,6 +121,21 @@ class ZarrMonitor:
         self._ensure_writers_are_consistent(state)
         for name, quantity in sorted(state.items(), key=lambda x: x[0]):
             self._writers[name].append(quantity)  # type: ignore[index]
+
+    def store_constant(self, grid: dict) -> None:
+        for name, quantity in grid.items():
+            if name in self._constants:
+                raise RuntimeError(
+                    f"constant fields can only be written once, {name} exists"
+                )
+            constant_writer = _ZarrConstantWriter(
+                self._comm,
+                self._group,
+                name=name,
+                partitioner=self.partitioner,
+            )
+            constant_writer.append(quantity)  # type: ignore[index]
+            self._constants.append(name)
 
 
 class _ZarrVariableWriter:
@@ -187,7 +212,8 @@ class _ZarrVariableWriter:
 
         from_slice = _get_from_slice(target_slice)
         logger.debug(
-            f"assigning data from subtile slice {from_slice} to target slice {target_slice}"
+            f"assigning data from subtile slice {from_slice} to "
+            f"target slice {target_slice}"
         )
         try:
             self.array[target_slice] = quantity.view[:][from_slice]
@@ -244,6 +270,51 @@ def _get_from_slice(target_slice):
     return tuple(return_list)
 
 
+class _ZarrConstantWriter(_ZarrVariableWriter):
+    def __init__(self, *args, **kwargs):
+        super(_ZarrConstantWriter, self).__init__(*args, **kwargs)
+        self._prepend_shape = (6,)
+        self._prepend_chunks = (1,)
+        self._PREPEND_DIMS = ("tile",)
+
+    def append(self, quantity):
+        # can't just use zarr_array.append because we only want to
+        # extend the dimension once, from the root rank
+        if self.array is None:
+            self._init_zarr(quantity)
+
+        self.sync_array()
+
+        target_slice = (self._partitioner.tile_index(self.rank),) + subtile_slice(
+            quantity.dims,
+            self.array.shape[1:],  # remove tile dimensions
+            self.partitioner.layout,
+            self.partitioner.tile.subtile_index(self.rank),
+            overlap=False,
+        )
+
+        from_slice = _get_from_slice(target_slice)
+        logger.debug(
+            f"assigning data from subtile slice {from_slice} to "
+            f"target slice {target_slice}"
+        )
+
+        try:
+            self.array[target_slice] = quantity.view[:][from_slice]
+        except ValueError as err:
+            if err.args[0] == "object __array__ method not producing an array":
+                self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
+        except TypeError as err:
+            if err.args[0].startswith(
+                "Implicit conversion to a NumPy array is not allowed."
+            ):
+                self.array[target_slice] = cupy.asnumpy(quantity.view[:][from_slice])
+            else:
+                raise err
+
+
 class _ZarrTimeWriter(_ZarrVariableWriter):
 
     _TIME_CHUNK_SIZE = 1024
@@ -263,15 +334,16 @@ class _ZarrTimeWriter(_ZarrVariableWriter):
 
     def _set_time_encoding_attrs(self, time):
         self._encoding_units = f"seconds since {time}"
-        self._encoding_calendar = time.calendar
+        self._encoding_calendar = get_calendar(time)
         if self.rank == 0:
             self.array.attrs["units"] = self._encoding_units
             self.array.attrs["calendar"] = self._encoding_calendar
 
     def _encode_time(self, time):
-        if time.calendar != self._encoding_calendar:
+        calendar = get_calendar(time)
+        if calendar != self._encoding_calendar:
             raise ValueError(
-                f"Calendar type of time, {time.calendar}, does not match the original "
+                f"Calendar type of time, {calendar}, does not match the original "
                 f"calendar encoding, {self._encoding_calendar}."
             )
         return cftime.date2num(
@@ -291,3 +363,10 @@ class _ZarrTimeWriter(_ZarrVariableWriter):
             self.array[self.i_time] = self._encode_time(time)
         self.i_time += 1
         self.comm.barrier()
+
+
+def get_calendar(time: Union[datetime, timedelta, cftime.datetime]):
+    try:
+        return time.calendar  # type: ignore
+    except AttributeError:
+        return "proleptic_gregorian"  # the calendar for Python datetimes
