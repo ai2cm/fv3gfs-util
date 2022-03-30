@@ -705,6 +705,7 @@ class HaloDataTransformerGPU(HaloDataTransformer):
         """
 
         # Unpack per type
+        self._unpack_buffer.array = cp.asarray(self._unpack_buffer_on_host[:])
         if self._type == _HaloDataTransformerType.SCALAR:
             self._opt_pack_scalar(quantities_x)
         elif self._type == _HaloDataTransformerType.VECTOR:
