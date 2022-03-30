@@ -219,7 +219,7 @@ class HaloUpdater:
             for to_rank, transformer in self._transformers.items():
                 self._recv_requests.append(
                     self._comm.comm.Irecv(
-                        transformer.get_unpack_buffer().array,
+                        transformer.get_unpack_buffer(),
                         source=to_rank,
                         tag=self._tag,
                     )
@@ -241,7 +241,7 @@ class HaloUpdater:
             for to_rank, transformer in self._transformers.items():
                 self._send_requests.append(
                     self._comm.comm.Isend(
-                        transformer.get_pack_buffer().array,
+                        transformer.get_pack_buffer(),
                         dest=to_rank,
                         tag=self._tag,
                     )

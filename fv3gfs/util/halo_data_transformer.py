@@ -284,7 +284,7 @@ class HaloDataTransformer(abc.ABC):
         if self._unpack_buffer is None:
             raise RuntimeError("Recv buffer can't be retrieved before allocate()")
         self.synchronize()
-        return self._unpack_buffer
+        return self._unpack_buffer.array
 
     def get_pack_buffer(self) -> Buffer:
         """Retrieve pack buffer.
@@ -294,7 +294,7 @@ class HaloDataTransformer(abc.ABC):
         if self._pack_buffer is None:
             raise RuntimeError("Send buffer can't be retrieved before allocate()")
         self.synchronize()
-        return self._pack_buffer
+        return self._pack_buffer.array
 
     def _compile(self):
         """Allocate contiguous memory buffers from description queued."""
@@ -581,6 +581,8 @@ class HaloDataTransformerGPU(HaloDataTransformer):
             exchange_descriptors_x,
             exchange_descriptors_y=exchange_descriptors_y,
         )
+        self._pack_buffer_on_host = None
+        self._unpack_buffer_on_host = None
 
     def _flatten_indices(
         self, exchange_data: HaloExchangeSpec, slices: Tuple[slice], rotate: bool,
@@ -652,6 +654,20 @@ class HaloDataTransformerGPU(HaloDataTransformer):
                         info_y, info_y.unpack_slices, False
                     ),
                 )
+
+    def get_unpack_buffer(self) -> Buffer:
+        if self._unpack_buffer is None:
+            raise RuntimeError("Recv buffer can't be retrieved before allocate()")
+        self.synchronize()
+        self._unpack_buffer_on_host = cp.asnumpy(self._unpack_buffer.array)
+        return self._unpack_buffer_on_host
+
+    def get_pack_buffer(self) -> Buffer:
+        if self._pack_buffer is None:
+            raise RuntimeError("Send buffer can't be retrieved before allocate()")
+        self.synchronize()
+        self._pack_buffer_on_host = cp.asnumpy(self._pack_buffer.array)
+        return self._pack_buffer_on_host
 
     def synchronize(self):
         if self._CODE_PATH_DEVICE_WIDE_SYNC:
@@ -737,7 +753,6 @@ class HaloDataTransformerGPU(HaloDataTransformer):
 
                 # Next transformer offset into send buffer
                 offset += info_x.pack_buffer_size
-
     def _opt_pack_vector(
         self, quantities_x: List[Quantity], quantities_y: List[Quantity]
     ):
