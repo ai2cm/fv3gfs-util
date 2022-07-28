@@ -1,11 +1,13 @@
-from typing import Tuple, Iterable, Dict, Union, Sequence, cast
-import warnings
 import dataclasses
+import warnings
+from typing import Dict, Iterable, Sequence, Tuple, Union, cast
+
 import numpy as np
-from . import _xarray
-from ._boundary_utils import shift_boundary_slice_tuple, bound_default_slice
-from . import constants
+
+from . import _xarray, constants
+from ._boundary_utils import bound_default_slice, shift_boundary_slice_tuple
 from .types import NumpyModule
+
 
 try:
     import cupy
@@ -396,7 +398,7 @@ class Quantity:
             default_origin=origin,
             shape=data.shape,
             dtype=data.dtype,
-            managed_memory=True,  # required to get GPUStorage with only gpu data copy
+            managed_memory=False,  # required to get GPUStorage with only gpu data copy
         )
         storage[...] = data
         # storage must initialize new memory. when GDP-3 is merged, we can instead

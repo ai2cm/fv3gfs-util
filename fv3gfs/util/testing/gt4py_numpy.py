@@ -8,7 +8,7 @@ import numpy as np
 
 def _wrap_storage_call(function, backend):
     def wrapped(shape, dtype=float):
-        return function(backend, [0] * len(shape), shape, dtype, managed_memory=True)
+        return function(backend, [0] * len(shape), shape, dtype, managed_memory=False)
 
     wrapped.__name__ = function.__name__
     return wrapped
