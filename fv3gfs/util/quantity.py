@@ -97,7 +97,7 @@ class BoundaryArrayView:
     def sel(self, **kwargs: Union[slice, int]) -> np.ndarray:
         """Convenience method to perform indexing using dimension names
         without knowing dimension order.
-        
+
         Args:
             **kwargs: slice/index to retrieve for a given dimension name
 
@@ -300,6 +300,11 @@ class Quantity:
             elif isinstance(data, gt4py.storage.storage.CPUStorage):
                 self._storage = data
                 self._data = np.asarray(data)
+            elif isinstance(data, gt4py.storage.storage.ExplicitlySyncedGPUStorage):
+                from gt4py.storage import utils as storage_utils
+
+                self._storage = data
+                self._data = storage_utils.gpu_view(data)
             else:
                 raise TypeError(
                     "only storages supported are CPUStorage and GPUStorage, "
@@ -368,7 +373,7 @@ class Quantity:
     def sel(self, **kwargs: Union[slice, int]) -> np.ndarray:
         """Convenience method to perform indexing on `view` using dimension names
         without knowing dimension order.
-        
+
         Args:
             **kwargs: slice/index to retrieve for a given dimension name
 
@@ -488,10 +493,10 @@ class Quantity:
         cell centers or interfaces, the API supports giving a list of dimension names
         for dimensions. For example, to re-order to X-Y-Z dimensions regardless of the
         grid the variable is on, one could do:
-        
+
         >>> from fv3gfs.util import X_DIMS, Y_DIMS, Z_DIMS
         >>> transposed_quantity = quantity.transpose([X_DIMS, Y_DIMS, Z_DIMS])
-        
+
         Args:
             target_dims: a list of output dimensions. Instead of a single dimension
                 name, an iterable of dimensions can be used instead for any entries.
