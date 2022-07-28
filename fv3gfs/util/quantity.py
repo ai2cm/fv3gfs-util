@@ -414,7 +414,7 @@ class Quantity:
             data = np.asarray(storage.data)
         elif isinstance(storage, gt4py.storage.storage.GPUStorage):
             data = storage.gpu_view
-        elif isinstance(storage, gt4py.storage.storage.GPUStorage):
+        elif isinstance(storage, gt4py.storage.storage.ExplicitlySyncedGPUStorage):
             from gt4py.storage import utils as storage_utils
 
             data = storage_utils.gpu_view(storage.data)
